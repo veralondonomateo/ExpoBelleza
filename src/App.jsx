@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { AppProvider } from './context/AppContext'
-import Sidebar   from './components/Sidebar'
-import Analytics from './components/Analytics'
-import Products  from './components/Products'
-import Sales     from './components/Sales'
-import Orders    from './components/Orders'
-import Export    from './components/Export'
+import Sidebar    from './components/Sidebar'
+import Analytics  from './components/Analytics'
+import Products   from './components/Products'
+import Sales      from './components/Sales'
+import Orders     from './components/Orders'
+import Export     from './components/Export'
 import CierreCaja from './components/CierreCaja'
+import Login      from './components/Login'
 
 function AppContent() {
   const [active, setActive] = useState('analytics')
@@ -26,5 +27,9 @@ function AppContent() {
 }
 
 export default function App() {
+  const [auth, setAuth] = useState(() => sessionStorage.getItem('eb_auth') === '1')
+
+  if (!auth) return <Login onAuth={() => setAuth(true)} />
+
   return <AppProvider><AppContent /></AppProvider>
 }
