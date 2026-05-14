@@ -210,51 +210,72 @@ export default function Analytics() {
         </div>
       )}
 
-      {/* Per-user breakdown — admin only */}
-      {isAdmin && byUser.length > 0 && (
+      {/* Per-user breakdown — admin only, always visible */}
+      {isAdmin && (
         <div className="bg-white rounded-xl shadow-card overflow-hidden">
-          <div className="px-4 py-3.5 border-b border-gray-50">
-            <p className="text-sm font-semibold text-gray-700">Ventas por vendedora</p>
-            <p className="text-[11px] text-gray-400 mt-0.5">Desglose por usuario</p>
+          <div className="px-4 py-3.5 border-b border-gray-50 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-700">Rendimiento por vendedora</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Ingresos y unidades vendidas</p>
+            </div>
+            <span className="text-xs text-gray-400">{byUser.length} {byUser.length === 1 ? 'vendedora' : 'vendedoras'}</span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px]">
-              <thead>
-                <tr className="bg-gray-50/70">
-                  {['Vendedora', 'Ventas', 'Productos', 'Ingresos'].map(h => (
-                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-widest whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {byUser.map((u, i) => (
-                  <tr key={i} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-brand-light flex items-center justify-center flex-shrink-0">
-                          <User size={12} className="text-brand-red" />
-                        </div>
-                        <p className="text-sm font-semibold text-gray-700">{u.name}</p>
+
+          {byUser.length === 0 ? (
+            <div className="py-10 text-center">
+              <User size={32} className="text-gray-200 mx-auto mb-2" />
+              <p className="text-sm text-gray-300">Sin ventas registradas aún</p>
+            </div>
+          ) : (
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {byUser.map((u, i) => {
+                const initials = (u.name || '?').slice(0, 2).toUpperCase()
+                const USER_COLORS = ['#ED5340', '#60A5FA', '#34D399', '#FBBF24', '#A78BFA']
+                const color = USER_COLORS[i % USER_COLORS.length]
+                return (
+                  <div key={i} className="border border-gray-100 rounded-xl p-4 hover:border-gray-200 transition-colors">
+                    {/* User header */}
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm text-white"
+                        style={{ backgroundColor: color }}>
+                        {initials}
                       </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-brand-soft text-brand-red">
-                        {u.count} {u.count === 1 ? 'venta' : 'ventas'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm text-gray-600">{u.items} uds.</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-bold text-gray-800">{fmt$(u.revenue)}</p>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{u.name}</p>
+                        <p className="text-[11px] text-gray-400">{u.count} {u.count === 1 ? 'transacción' : 'transacciones'}</p>
+                      </div>
+                    </div>
+
+                    {/* Stats grid */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-gray-50 rounded-lg p-2.5">
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">Ingresos</p>
+                        <p className="text-base font-bold text-gray-800 leading-tight">{fmt$(u.revenue)}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-2.5">
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">Unidades</p>
+                        <p className="text-base font-bold text-gray-800 leading-tight">{u.items} <span className="text-xs font-medium text-gray-400">uds.</span></p>
+                      </div>
+                    </div>
+
+                    {/* Revenue bar */}
+                    {stats.revenue > 0 && (
+                      <div className="mt-3">
+                        <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+                          <span>% del total</span>
+                          <span className="font-semibold" style={{ color }}>{((u.revenue / stats.revenue) * 100).toFixed(1)}%</span>
+                        </div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${(u.revenue / stats.revenue) * 100}%`, backgroundColor: color }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
