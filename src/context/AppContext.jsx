@@ -1,40 +1,67 @@
-import { createContext, useContext, useState, useEffect } from 'react'
-import { getProducts, saveProducts, getSales, saveSales } from '../utils/storage'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { getProducts, updateProduct as dbUpdateProduct, getSales, addSale as dbAddSale } from '../utils/db'
 import { INITIAL_PRODUCTS } from '../data/products'
 
 const Ctx = createContext()
 
 export function AppProvider({ children }) {
   const [products, setProducts] = useState([])
-  const [sales, setSales] = useState([])
+  const [sales,    setSales]    = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [dbError,  setDbError]  = useState(null)
 
   useEffect(() => {
-    const saved = getProducts()
-    setProducts(saved?.length ? saved : INITIAL_PRODUCTS.map(p => ({ ...p })))
-    setSales(getSales())
+    async function load() {
+      try {
+        const [prods, sls] = await Promise.all([getProducts(), getSales()])
+        // If DB returned products use them, otherwise keep initial seeds (DB already has them)
+        setProducts(prods.length ? prods : INITIAL_PRODUCTS.map(p => ({ ...p })))
+        setSales(sls)
+      } catch (err) {
+        console.error('Error cargando datos de Supabase:', err)
+        setDbError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
   }, [])
 
-  const updateProduct = (updated) => {
-    const next = products.map(p => p.id === updated.id ? updated : p)
-    setProducts(next)
-    saveProducts(next)
-  }
+  const updateProduct = useCallback(async (updated) => {
+    // Optimistic UI
+    setProducts(prev => prev.map(p => p.id === updated.id ? updated : p))
+    try {
+      await dbUpdateProduct(updated)
+    } catch (err) {
+      console.error('Error actualizando producto:', err)
+      // Revert on error
+      setProducts(prev => prev.map(p => p.id === updated.id ? prev.find(x => x.id === updated.id) : p))
+    }
+  }, [])
 
-  const addSale = (data) => {
-    const sale = { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, date: new Date().toISOString(), ...data }
-    const nextP = products.map(p => {
-      const item = data.items.find(i => i.productId === p.id)
-      return item ? { ...p, stock: Math.max(0, p.stock - item.quantity) } : p
-    })
-    setProducts(nextP)
-    saveProducts(nextP)
-    const nextS = [...sales, sale]
-    setSales(nextS)
-    saveSales(nextS)
-    return sale
-  }
+  const addSale = useCallback(async (data) => {
+    try {
+      const sale = await dbAddSale(data)
+      // Update local products stock to match what DB did
+      setProducts(prev =>
+        prev.map(p => {
+          const item = data.items.find(i => i.productId === p.id)
+          return item ? { ...p, stock: Math.max(0, p.stock - item.quantity) } : p
+        })
+      )
+      setSales(prev => [sale, ...prev])
+      return sale
+    } catch (err) {
+      console.error('Error registrando venta:', err)
+      throw err
+    }
+  }, [])
 
-  return <Ctx.Provider value={{ products, sales, updateProduct, addSale }}>{children}</Ctx.Provider>
+  return (
+    <Ctx.Provider value={{ products, sales, loading, dbError, updateProduct, addSale }}>
+      {children}
+    </Ctx.Provider>
+  )
 }
 
 export const useApp = () => useContext(Ctx)

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Search, X, ChevronDown, Eye, ClipboardList, Banknote, Smartphone, CreditCard, User, Package } from 'lucide-react'
+import { Search, X, Eye, ClipboardList, Banknote, Smartphone, CreditCard, User, Package } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { fmt$, fmtDate, isToday } from '../utils/formatters'
 
@@ -19,7 +19,7 @@ function DetailModal({ sale, onClose }) {
     <div className="fixed inset-0 bg-black/25 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-modal w-full max-w-lg">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-50">
+        <div className="flex items-center justify-between px-5 lg:px-6 pt-5 lg:pt-6 pb-4 border-b border-gray-50">
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">
               Pedido #{shortId}
@@ -32,7 +32,7 @@ function DetailModal({ sale, onClose }) {
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-5">
+        <div className="px-5 lg:px-6 py-5 space-y-5">
           {/* Cliente */}
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
@@ -120,31 +120,31 @@ export default function Orders() {
   }, [sales, search, filterPay])
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-6 lg:p-8">
       {/* Header */}
-      <div className="flex items-start justify-between mb-7">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-5 lg:mb-7">
         <div>
-          <h1 className="text-[22px] font-bold text-gray-800">Pedidos</h1>
+          <h1 className="text-xl lg:text-[22px] font-bold text-gray-800">Pedidos</h1>
           <p className="text-sm text-gray-400 mt-0.5">Historial completo de ventas</p>
         </div>
-        <div className="flex gap-3">
-          <div className="bg-white rounded-xl shadow-card px-4 py-3 text-center">
+        <div className="flex gap-2 lg:gap-3 flex-wrap">
+          <div className="bg-white rounded-xl shadow-card px-3 lg:px-4 py-2.5 lg:py-3 text-center min-w-[64px]">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Hoy</p>
-            <p className="text-xl font-bold text-brand-red mt-0.5">{todaySales.length}</p>
+            <p className="text-lg lg:text-xl font-bold text-brand-red mt-0.5">{todaySales.length}</p>
           </div>
-          <div className="bg-white rounded-xl shadow-card px-4 py-3 text-center">
+          <div className="bg-white rounded-xl shadow-card px-3 lg:px-4 py-2.5 lg:py-3 text-center min-w-[64px]">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Total</p>
-            <p className="text-xl font-bold text-gray-800 mt-0.5">{sales.length}</p>
+            <p className="text-lg lg:text-xl font-bold text-gray-800 mt-0.5">{sales.length}</p>
           </div>
-          <div className="bg-white rounded-xl shadow-card px-4 py-3 text-center">
+          <div className="bg-white rounded-xl shadow-card px-3 lg:px-4 py-2.5 lg:py-3 text-center">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Ingresos hoy</p>
-            <p className="text-xl font-bold text-gray-800 mt-0.5">{fmt$(todayRevenue)}</p>
+            <p className="text-lg lg:text-xl font-bold text-gray-800 mt-0.5">{fmt$(todayRevenue)}</p>
           </div>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-2xl shadow-card p-4 mb-5 flex gap-3">
+      <div className="bg-white rounded-2xl shadow-card p-3 lg:p-4 mb-4 lg:mb-5 flex flex-col sm:flex-row gap-3">
         {/* Search */}
         <div className="flex-1 flex items-center gap-2.5 bg-gray-50 border border-transparent rounded-xl px-3.5 focus-within:border-brand-red/30 focus-within:bg-white transition">
           <Search size={15} className="text-gray-400 flex-shrink-0" />
@@ -162,15 +162,15 @@ export default function Orders() {
         </div>
 
         {/* Payment filter */}
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 flex-wrap">
           {[
-            { id: 'all',           label: 'Todos'         },
-            { id: 'efectivo',      label: 'Efectivo'      },
-            { id: 'transferencia', label: 'Transferencia' },
-            { id: 'tarjeta',       label: 'Tarjeta'       },
+            { id: 'all',           label: 'Todos'   },
+            { id: 'efectivo',      label: 'Efectivo' },
+            { id: 'transferencia', label: 'Transfer' },
+            { id: 'tarjeta',       label: 'Tarjeta'  },
           ].map(opt => (
             <button key={opt.id} onClick={() => setFilterPay(opt.id)}
-              className={`px-3.5 py-2.5 rounded-xl text-xs font-semibold transition ${
+              className={`px-3 py-2 rounded-xl text-xs font-semibold transition whitespace-nowrap ${
                 filterPay === opt.id
                   ? 'bg-brand-red text-white'
                   : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
@@ -184,79 +184,81 @@ export default function Orders() {
       {/* Table */}
       <div className="bg-white rounded-2xl shadow-card overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="py-20 text-center">
+          <div className="py-16 lg:py-20 text-center">
             <ClipboardList size={40} className="text-gray-200 mx-auto mb-3" />
             <p className="text-sm text-gray-400">
               {sales.length === 0 ? 'No hay pedidos registrados aún' : 'Ningún pedido coincide con la búsqueda'}
             </p>
           </div>
         ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50/60 border-b border-gray-50">
-                {['#', 'Fecha', 'Cliente', 'Productos', 'Pago', 'Total', ''].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {filtered.map(sale => {
-                const col  = PAY_COLORS[sale.paymentMethod] || PAY_COLORS.efectivo
-                const Icon = PAY_ICONS[sale.paymentMethod]  || Banknote
-                const shortId = sale.id.slice(-6).toUpperCase()
-                return (
-                  <tr key={sale.id} className="hover:bg-gray-50/50 transition-colors group">
-                    <td className="px-5 py-4">
-                      <span className="text-[11px] font-bold text-gray-400 font-mono">#{shortId}</span>
-                    </td>
-                    <td className="px-5 py-4 whitespace-nowrap">
-                      <p className="text-xs text-gray-500">{fmtDate(sale.date)}</p>
-                      {isToday(sale.date) && (
-                        <span className="text-[9px] font-bold text-brand-red bg-brand-light px-1.5 py-0.5 rounded-full mt-1 inline-block">
-                          HOY
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="text-sm font-semibold text-gray-700">{sale.customer?.name || '—'}</p>
-                      <p className="text-xs text-gray-400">{sale.customer?.phone || ''}</p>
-                    </td>
-                    <td className="px-5 py-4 max-w-[200px]">
-                      <div className="flex flex-wrap gap-1">
-                        {sale.items?.slice(0, 2).map((item, i) => (
-                          <span key={i} className="inline-flex items-center bg-gray-100 text-gray-600 text-[10px] font-medium px-2 py-1 rounded-lg whitespace-nowrap">
-                            {item.quantity}× {item.productName}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50/60 border-b border-gray-50">
+                  {['#', 'Fecha', 'Cliente', 'Productos', 'Pago', 'Total', ''].map(h => (
+                    <th key={h} className="px-4 lg:px-5 py-3 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filtered.map(sale => {
+                  const col  = PAY_COLORS[sale.paymentMethod] || PAY_COLORS.efectivo
+                  const Icon = PAY_ICONS[sale.paymentMethod]  || Banknote
+                  const shortId = sale.id.slice(-6).toUpperCase()
+                  return (
+                    <tr key={sale.id} className="hover:bg-gray-50/50 transition-colors group">
+                      <td className="px-4 lg:px-5 py-3 lg:py-4">
+                        <span className="text-[11px] font-bold text-gray-400 font-mono">#{shortId}</span>
+                      </td>
+                      <td className="px-4 lg:px-5 py-3 lg:py-4 whitespace-nowrap">
+                        <p className="text-xs text-gray-500">{fmtDate(sale.date)}</p>
+                        {isToday(sale.date) && (
+                          <span className="text-[9px] font-bold text-brand-red bg-brand-light px-1.5 py-0.5 rounded-full mt-1 inline-block">
+                            HOY
                           </span>
-                        ))}
-                        {(sale.items?.length ?? 0) > 2 && (
-                          <span className="text-[10px] text-gray-400 px-1 py-1">+{sale.items.length - 2}</span>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${col.bg} ${col.text}`}>
-                        <Icon size={10} />
-                        <span className="capitalize">{sale.paymentMethod}</span>
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="text-sm font-bold text-gray-800">{fmt$(sale.total)}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <button
-                        onClick={() => setSelected(sale)}
-                        className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-brand-light hover:text-brand-red flex items-center justify-center text-gray-400 transition opacity-0 group-hover:opacity-100"
-                      >
-                        <Eye size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-4 lg:px-5 py-3 lg:py-4">
+                        <p className="text-sm font-semibold text-gray-700 whitespace-nowrap">{sale.customer?.name || '—'}</p>
+                        <p className="text-xs text-gray-400">{sale.customer?.phone || ''}</p>
+                      </td>
+                      <td className="px-4 lg:px-5 py-3 lg:py-4 max-w-[160px]">
+                        <div className="flex flex-wrap gap-1">
+                          {sale.items?.slice(0, 2).map((item, i) => (
+                            <span key={i} className="inline-flex items-center bg-gray-100 text-gray-600 text-[10px] font-medium px-2 py-1 rounded-lg whitespace-nowrap">
+                              {item.quantity}× {item.productName}
+                            </span>
+                          ))}
+                          {(sale.items?.length ?? 0) > 2 && (
+                            <span className="text-[10px] text-gray-400 px-1 py-1">+{sale.items.length - 2}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 lg:px-5 py-3 lg:py-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${col.bg} ${col.text}`}>
+                          <Icon size={10} />
+                          <span className="capitalize">{sale.paymentMethod}</span>
+                        </span>
+                      </td>
+                      <td className="px-4 lg:px-5 py-3 lg:py-4">
+                        <p className="text-sm font-bold text-gray-800 whitespace-nowrap">{fmt$(sale.total)}</p>
+                      </td>
+                      <td className="px-4 lg:px-5 py-3 lg:py-4">
+                        <button
+                          onClick={() => setSelected(sale)}
+                          className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-brand-light hover:text-brand-red flex items-center justify-center text-gray-400 transition opacity-0 group-hover:opacity-100"
+                        >
+                          <Eye size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

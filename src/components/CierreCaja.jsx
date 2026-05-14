@@ -1,11 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Banknote, Smartphone, CreditCard, Check, AlertTriangle, Clock, ChevronDown, ChevronUp, Wallet } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { fmt$, isToday } from '../utils/formatters'
-
-const K = 'eb_cierres'
-const loadCierres  = () => { try { return JSON.parse(localStorage.getItem(K)) ?? [] } catch { return [] } }
-const saveCierres  = (v) => localStorage.setItem(K, JSON.stringify(v))
+import { getCierres, addCierre as dbAddCierre } from '../utils/db'
 
 const PAY = [
   { id: 'efectivo',      label: 'Efectivo',      icon: Banknote,   color: '#34D399', desc: 'Billetes y monedas' },
@@ -26,13 +23,17 @@ function DiffBadge({ diff }) {
 export default function CierreCaja() {
   const { sales } = useApp()
 
-  const [contado, setContado] = useState('')
-  const [notas,   setNotas]   = useState('')
-  const [saved,   setSaved]   = useState(false)
-  const [history, setHistory] = useState(loadCierres)
+  const [contado,     setContado]     = useState('')
+  const [notas,       setNotas]       = useState('')
+  const [saved,       setSaved]       = useState(false)
+  const [saving,      setSaving]      = useState(false)
+  const [history,     setHistory]     = useState([])
   const [showHistory, setShowHistory] = useState(false)
 
-  // Sales from today only
+  useEffect(() => {
+    getCierres().then(setHistory).catch(console.error)
+  }, [])
+
   const todaySales = useMemo(() => sales.filter(s => isToday(s.date)), [sales])
 
   const byPay = useMemo(() => {
@@ -44,12 +45,13 @@ export default function CierreCaja() {
     return result
   }, [todaySales])
 
-  const totalDay   = todaySales.reduce((a, s) => a + s.total, 0)
-  const efectivoEsperado = byPay.efectivo?.total ?? 0
-  const contadoNum = parseFloat(contado.replace(/[^0-9.]/g, '')) || 0
-  const diff       = contadoNum - efectivoEsperado
+  const totalDay           = todaySales.reduce((a, s) => a + s.total, 0)
+  const efectivoEsperado   = byPay.efectivo?.total ?? 0
+  const contadoNum         = parseFloat(contado.replace(/[^0-9.]/g, '')) || 0
+  const diff               = contadoNum - efectivoEsperado
 
-  const handleCierre = () => {
+  const handleCierre = async () => {
+    setSaving(true)
     const cierre = {
       id:         Date.now().toString(),
       fecha:      new Date().toISOString(),
@@ -62,10 +64,15 @@ export default function CierreCaja() {
       diferencia: diff,
       notas,
     }
-    const next = [cierre, ...history]
-    setHistory(next)
-    saveCierres(next)
-    setSaved(true)
+    try {
+      await dbAddCierre(cierre)
+      setHistory(prev => [cierre, ...prev])
+      setSaved(true)
+    } catch (err) {
+      console.error('Error guardando cierre:', err)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const fmtFecha = (iso) => new Date(iso).toLocaleDateString('es-CO', {
@@ -73,42 +80,42 @@ export default function CierreCaja() {
   })
 
   return (
-    <div className="p-8 max-w-2xl">
-      <div className="mb-7">
-        <h1 className="text-[22px] font-bold text-gray-800">Cierre de Caja</h1>
+    <div className="p-4 md:p-6 lg:p-8 max-w-2xl">
+      <div className="mb-5 lg:mb-7">
+        <h1 className="text-xl lg:text-[22px] font-bold text-gray-800">Cierre de Caja</h1>
         <p className="text-sm text-gray-400 mt-0.5 capitalize">
           {new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       </div>
 
       {/* Resumen del día */}
-      <div className="bg-white rounded-2xl shadow-card p-6 mb-5">
-        <div className="flex items-center justify-between mb-5">
+      <div className="bg-white rounded-2xl shadow-card p-4 lg:p-6 mb-4 lg:mb-5">
+        <div className="flex items-center justify-between mb-4 lg:mb-5">
           <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
             <Clock size={15} className="text-brand-red" />
             Resumen del día
           </h2>
           <div className="text-right">
             <p className="text-[10px] text-gray-400 uppercase tracking-wide">Total del día</p>
-            <p className="text-2xl font-bold text-brand-red">{fmt$(totalDay)}</p>
+            <p className="text-xl lg:text-2xl font-bold text-brand-red">{fmt$(totalDay)}</p>
             <p className="text-[11px] text-gray-400">{todaySales.length} ventas</p>
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2 lg:space-y-3">
           {PAY.map(({ id, label, icon: Icon, color, desc }) => {
             const data = byPay[id] ?? { count: 0, total: 0 }
             return (
-              <div key={id} className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-gray-50">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+              <div key={id} className="flex items-center gap-3 lg:gap-4 px-3 lg:px-4 py-3 lg:py-3.5 rounded-xl bg-gray-50">
+                <div className="w-9 h-9 lg:w-10 lg:h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                   style={{ backgroundColor: color + '18' }}>
-                  <Icon size={18} style={{ color }} />
+                  <Icon size={16} style={{ color }} />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-700">{label}</p>
-                  <p className="text-xs text-gray-400">{desc} · {data.count} ventas</p>
+                  <p className="text-xs text-gray-400 truncate">{desc} · {data.count} ventas</p>
                 </div>
-                <p className="text-base font-bold text-gray-800">{fmt$(data.total)}</p>
+                <p className="text-sm lg:text-base font-bold text-gray-800 flex-shrink-0">{fmt$(data.total)}</p>
               </div>
             )
           })}
@@ -116,20 +123,20 @@ export default function CierreCaja() {
       </div>
 
       {/* Arqueo de caja (efectivo) */}
-      <div className="bg-white rounded-2xl shadow-card p-6 mb-5">
+      <div className="bg-white rounded-2xl shadow-card p-4 lg:p-6 mb-4 lg:mb-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
           <Banknote size={15} className="text-brand-red" />
           Arqueo de efectivo
         </h2>
-        <p className="text-xs text-gray-400 mb-5">Cuenta los billetes y escribe el total físico en caja</p>
+        <p className="text-xs text-gray-400 mb-4 lg:mb-5">Cuenta los billetes y escribe el total físico en caja</p>
 
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3.5">
+        <div className="grid grid-cols-2 gap-3 lg:gap-4 mb-4">
+          <div className="bg-green-50 border border-green-100 rounded-xl px-3 lg:px-4 py-3 lg:py-3.5">
             <p className="text-[10px] font-bold text-green-600 uppercase tracking-wide">Sistema espera</p>
-            <p className="text-xl font-bold text-green-700 mt-1">{fmt$(efectivoEsperado)}</p>
-            <p className="text-[11px] text-green-600 mt-0.5">{byPay.efectivo?.count ?? 0} ventas en efectivo</p>
+            <p className="text-lg lg:text-xl font-bold text-green-700 mt-1">{fmt$(efectivoEsperado)}</p>
+            <p className="text-[11px] text-green-600 mt-0.5">{byPay.efectivo?.count ?? 0} ventas</p>
           </div>
-          <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5">
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 lg:px-4 py-3 lg:py-3.5">
             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Contado físico</p>
             <div className="relative mt-1">
               <span className="absolute left-0 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-sm">$</span>
@@ -138,7 +145,7 @@ export default function CierreCaja() {
                 value={contado}
                 onChange={e => { setContado(e.target.value); setSaved(false) }}
                 placeholder="0"
-                className="w-full pl-4 text-xl font-bold text-gray-800 bg-transparent focus:outline-none placeholder:text-gray-300"
+                className="w-full pl-4 text-lg lg:text-xl font-bold text-gray-800 bg-transparent focus:outline-none placeholder:text-gray-300"
               />
             </div>
             {contado && <DiffBadge diff={diff} />}
@@ -173,19 +180,24 @@ export default function CierreCaja() {
       {/* Guardar cierre */}
       <button
         onClick={handleCierre}
-        disabled={saved}
+        disabled={saved || saving}
         className={`w-full py-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
           saved
             ? 'bg-green-50 text-green-600 border border-green-200 cursor-default'
-            : 'bg-brand-red text-white hover:bg-brand-red/90 shadow-sm'
+            : 'bg-brand-red text-white hover:bg-brand-red/90 shadow-sm disabled:opacity-60'
         }`}
       >
-        {saved ? <><Check size={16} /> Cierre guardado</> : <><Wallet size={16} /> Guardar cierre del día</>}
+        {saved
+          ? <><Check size={16} /> Cierre guardado</>
+          : saving
+          ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Guardando...</>
+          : <><Wallet size={16} /> Guardar cierre del día</>
+        }
       </button>
 
       {/* Historial de cierres */}
       {history.length > 0 && (
-        <div className="mt-6">
+        <div className="mt-5 lg:mt-6">
           <button
             onClick={() => setShowHistory(v => !v)}
             className="flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-800 transition mb-3"
@@ -197,13 +209,13 @@ export default function CierreCaja() {
           {showHistory && (
             <div className="space-y-3">
               {history.map(c => (
-                <div key={c.id} className="bg-white rounded-2xl shadow-card p-5">
+                <div key={c.id} className="bg-white rounded-2xl shadow-card p-4 lg:p-5">
                   <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-700 capitalize">{fmtFecha(c.fecha)}</p>
+                    <div className="min-w-0 flex-1 mr-3">
+                      <p className="text-sm font-semibold text-gray-700 capitalize truncate">{fmtFecha(c.fecha)}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{c.ventas} ventas</p>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right flex-shrink-0">
                       <p className="text-lg font-bold text-gray-800">{fmt$(c.totalDia)}</p>
                       {Math.abs(c.diferencia) >= 1
                         ? <DiffBadge diff={c.diferencia} />
@@ -217,8 +229,8 @@ export default function CierreCaja() {
                       { label: 'Transferencia', val: c.transfer, color: '#60A5FA' },
                       { label: 'Tarjeta',       val: c.tarjeta,  color: '#A78BFA' },
                     ].map(item => (
-                      <div key={item.label} className="bg-gray-50 rounded-xl px-3 py-2 text-center">
-                        <p className="text-[10px] text-gray-400 font-medium">{item.label}</p>
+                      <div key={item.label} className="bg-gray-50 rounded-xl px-2 lg:px-3 py-2 text-center">
+                        <p className="text-[10px] text-gray-400 font-medium truncate">{item.label}</p>
                         <p className="text-sm font-bold mt-0.5" style={{ color: item.color }}>{fmt$(item.val)}</p>
                       </div>
                     ))}
