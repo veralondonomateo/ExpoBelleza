@@ -29,10 +29,15 @@ export async function updateProduct(product) {
 
 function rowToSale(row) {
   return {
-    id:            row.id,
-    date:          row.created_at,
-    total:         Number(row.total),
-    paymentMethod: row.payment_method,
+    id:                  row.id,
+    date:                row.created_at,
+    total:               Number(row.total),
+    paymentMethod:       row.payment_method,
+    discount:            Number(row.discount ?? 0),
+    secondPaymentMethod: row.second_payment_method ?? null,
+    secondPaymentAmount: Number(row.second_payment_amount ?? 0),
+    userId:              row.user_id   ?? null,
+    userName:            row.user_name ?? null,
     customer: {
       name:     row.customer_name     ?? '',
       phone:    row.customer_phone    ?? '',
@@ -65,13 +70,18 @@ export async function addSale(data) {
     .from('sales')
     .insert({
       id,
-      total:             data.total,
-      payment_method:    data.paymentMethod,
-      customer_name:     data.customer?.name     || null,
-      customer_phone:    data.customer?.phone    || null,
-      customer_email:    data.customer?.email    || null,
-      customer_document: data.customer?.document || null,
-      created_at:        now,
+      total:                 data.total,
+      payment_method:        data.paymentMethod,
+      discount:              data.discount              ?? 0,
+      second_payment_method: data.secondPaymentMethod   ?? null,
+      second_payment_amount: data.secondPaymentAmount   ?? null,
+      user_id:               data.userId                ?? null,
+      user_name:             data.userName              ?? null,
+      customer_name:         data.customer?.name        || null,
+      customer_phone:        data.customer?.phone       || null,
+      customer_email:        data.customer?.email       || null,
+      customer_document:     data.customer?.document    || null,
+      created_at:            now,
     })
   if (saleErr) throw saleErr
 

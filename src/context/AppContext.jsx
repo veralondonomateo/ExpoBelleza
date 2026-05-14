@@ -1,48 +1,56 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { supabase } from '../lib/supabase'
 import { getProducts, updateProduct as dbUpdateProduct, getSales, addSale as dbAddSale } from '../utils/db'
 import { INITIAL_PRODUCTS } from '../data/products'
 
 const Ctx = createContext()
 
-export function AppProvider({ children }) {
+export function AppProvider({ user, children }) {
+  const [profile,  setProfile]  = useState(null)
   const [products, setProducts] = useState([])
   const [sales,    setSales]    = useState([])
   const [loading,  setLoading]  = useState(true)
   const [dbError,  setDbError]  = useState(null)
 
   useEffect(() => {
-    async function load() {
+    async function init() {
       try {
-        const [prods, sls] = await Promise.all([getProducts(), getSales()])
-        // If DB returned products use them, otherwise keep initial seeds (DB already has them)
+        const [{ data: prof }, prods, sls] = await Promise.all([
+          supabase.from('profiles').select('role, full_name').eq('id', user.id).single(),
+          getProducts(),
+          getSales(),
+        ])
+        setProfile(prof)
         setProducts(prods.length ? prods : INITIAL_PRODUCTS.map(p => ({ ...p })))
         setSales(sls)
       } catch (err) {
-        console.error('Error cargando datos de Supabase:', err)
+        console.error('Error cargando datos:', err)
         setDbError(err.message)
       } finally {
         setLoading(false)
       }
     }
-    load()
-  }, [])
+    init()
+  }, [user.id])
+
+  const logout = useCallback(() => supabase.auth.signOut(), [])
 
   const updateProduct = useCallback(async (updated) => {
-    // Optimistic UI
     setProducts(prev => prev.map(p => p.id === updated.id ? updated : p))
     try {
       await dbUpdateProduct(updated)
     } catch (err) {
       console.error('Error actualizando producto:', err)
-      // Revert on error
-      setProducts(prev => prev.map(p => p.id === updated.id ? prev.find(x => x.id === updated.id) : p))
     }
   }, [])
 
   const addSale = useCallback(async (data) => {
     try {
-      const sale = await dbAddSale(data)
-      // Update local products stock to match what DB did
+      const sale = await dbAddSale({
+        ...data,
+        userId:   user.id,
+        userName: profile?.full_name || user.email?.split('@')[0] || null,
+      })
       setProducts(prev =>
         prev.map(p => {
           const item = data.items.find(i => i.productId === p.id)
@@ -55,10 +63,12 @@ export function AppProvider({ children }) {
       console.error('Error registrando venta:', err)
       throw err
     }
-  }, [])
+  }, [user, profile])
+
+  const userRole = profile?.role ?? 'vendedora'
 
   return (
-    <Ctx.Provider value={{ products, sales, loading, dbError, updateProduct, addSale }}>
+    <Ctx.Provider value={{ user, profile, userRole, products, sales, loading, dbError, updateProduct, addSale, logout }}>
       {children}
     </Ctx.Provider>
   )

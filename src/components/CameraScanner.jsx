@@ -4,11 +4,7 @@ import { X, Camera, CheckCircle } from 'lucide-react'
 
 const FORMATS = [
   Html5QrcodeSupportedFormats.EAN_13,
-  Html5QrcodeSupportedFormats.EAN_8,
   Html5QrcodeSupportedFormats.CODE_128,
-  Html5QrcodeSupportedFormats.CODE_39,
-  Html5QrcodeSupportedFormats.UPC_A,
-  Html5QrcodeSupportedFormats.UPC_E,
 ]
 
 export default function CameraScanner({ onDetect, onClose }) {
@@ -32,14 +28,18 @@ export default function CameraScanner({ onDetect, onClose }) {
 
     scanner.start(
       { facingMode: 'environment' },
-      { fps: 12, qrbox: (w, h) => ({ width: Math.min(260, w - 40), height: Math.min(100, h - 80) }) },
+      {
+        fps: 30,
+        qrbox: (w, h) => ({ width: Math.min(340, w - 16), height: Math.min(120, h - 60) }),
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      },
       (code) => {
         const trimmed = code.trim()
-        // cooldown: ignore same code within 2.5s
+        // cooldown: ignore same code within 1.5s
         if (trimmed === lastCodeRef.current) return
         lastCodeRef.current = trimmed
         clearTimeout(cooldownRef.current)
-        cooldownRef.current = setTimeout(() => { lastCodeRef.current = null }, 2500)
+        cooldownRef.current = setTimeout(() => { lastCodeRef.current = null }, 1500)
 
         setLastCode(trimmed)
         setTimeout(() => setLastCode(null), 2000)

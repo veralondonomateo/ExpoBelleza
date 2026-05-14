@@ -1,6 +1,6 @@
-import { BarChart2, Package, ShoppingBag, ClipboardList, Download, Wallet, ChevronLeft, ChevronRight } from 'lucide-react'
+import { BarChart2, Package, ShoppingBag, ClipboardList, Download, Wallet, ChevronLeft, ChevronRight, Users, LogOut } from 'lucide-react'
 
-const GROUPS = [
+const NAV_GROUPS = [
   {
     label: 'Ventas',
     items: [
@@ -19,7 +19,14 @@ const GROUPS = [
   },
 ]
 
-export default function Sidebar({ active, onNav, collapsed, onToggle }) {
+const ADMIN_ITEMS = [
+  { id: 'users', icon: Users, label: 'Usuarios' },
+]
+
+export default function Sidebar({ active, onNav, collapsed, onToggle, userRole, user, onLogout }) {
+  const displayName = user?.email?.split('@')[0] ?? ''
+  const isAdmin = userRole === 'admin'
+
   return (
     <aside
       className={`${collapsed ? 'w-[60px]' : 'w-[220px]'} h-screen bg-white border-r border-gray-100 flex flex-col flex-shrink-0 transition-all duration-200 overflow-hidden`}
@@ -40,7 +47,7 @@ export default function Sidebar({ active, onNav, collapsed, onToggle }) {
 
       {/* Nav */}
       <nav className={`flex-1 py-3 overflow-y-auto overflow-x-hidden ${collapsed ? 'px-1.5' : 'px-2.5'}`}>
-        {GROUPS.map(({ label, items }) => (
+        {NAV_GROUPS.map(({ label, items }) => (
           <div key={label} className="mb-4">
             {!collapsed && (
               <p className="px-3 mb-1 text-[9px] font-bold text-gray-300 uppercase tracking-[0.18em] whitespace-nowrap">
@@ -77,20 +84,77 @@ export default function Sidebar({ active, onNav, collapsed, onToggle }) {
             </div>
           </div>
         ))}
-      </nav>
 
-      {/* Footer + Toggle */}
-      <div className={`border-t border-gray-50 ${collapsed ? 'p-2' : 'px-4 py-3'}`}>
-        {!collapsed && (
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
-            <p className="text-xs text-gray-400 truncate">ExpoBelleza · 2026</p>
+        {/* Admin-only section */}
+        {isAdmin && (
+          <div className="mb-4">
+            {!collapsed && (
+              <p className="px-3 mb-1 text-[9px] font-bold text-gray-300 uppercase tracking-[0.18em] whitespace-nowrap">
+                Admin
+              </p>
+            )}
+            {collapsed && <div className="h-px bg-gray-100 mx-1 mb-2" />}
+            <div className="space-y-0.5">
+              {ADMIN_ITEMS.map(({ id, icon: Icon, label: name }) => {
+                const on = active === id
+                return (
+                  <button
+                    key={id}
+                    onClick={() => onNav(id)}
+                    title={collapsed ? name : undefined}
+                    className={`w-full flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-150 ${
+                      collapsed ? 'justify-center px-0 py-3' : 'px-3 py-2.5'
+                    } ${
+                      on
+                        ? 'bg-brand-light text-brand-red'
+                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                    }`}
+                  >
+                    <Icon size={17} className={`flex-shrink-0 ${on ? 'text-brand-red' : 'text-gray-400'}`} />
+                    {!collapsed && (
+                      <>
+                        <span className="truncate">{name}</span>
+                        {on && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-red flex-shrink-0" />}
+                      </>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
+      </nav>
+
+      {/* Footer */}
+      <div className={`border-t border-gray-50 ${collapsed ? 'p-2 space-y-1' : 'px-4 py-3 space-y-2'}`}>
+        {/* User info */}
+        {!collapsed && displayName && (
+          <div className="flex items-center gap-2 px-1">
+            <div className="w-6 h-6 rounded-full bg-brand-light flex items-center justify-center flex-shrink-0">
+              <span className="text-[10px] font-bold text-brand-red uppercase">{displayName[0]}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold text-gray-700 truncate">{displayName}</p>
+              {isAdmin && <p className="text-[9px] text-brand-red font-medium uppercase tracking-wide">Admin</p>}
+            </div>
+          </div>
+        )}
+
+        {/* Logout */}
+        <button
+          onClick={onLogout}
+          title="Cerrar sesión"
+          className={`w-full flex items-center rounded-xl py-2 text-gray-400 hover:bg-red-50 hover:text-red-500 transition ${collapsed ? 'justify-center px-0' : 'px-2 gap-2'}`}
+        >
+          <LogOut size={14} />
+          {!collapsed && <span className="text-xs font-medium">Cerrar sesión</span>}
+        </button>
+
+        {/* Collapse toggle */}
         <button
           onClick={onToggle}
           title={collapsed ? 'Expandir menú' : 'Colapsar menú'}
-          className={`w-full flex items-center rounded-xl py-2 text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition ${collapsed ? 'justify-center px-0' : 'px-3 gap-2'}`}
+          className={`w-full flex items-center rounded-xl py-2 text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition ${collapsed ? 'justify-center px-0' : 'px-2 gap-2'}`}
         >
           {collapsed
             ? <ChevronRight size={16} />

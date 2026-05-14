@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from './lib/supabase'
 import { AppProvider, useApp } from './context/AppContext'
 import Sidebar    from './components/Sidebar'
 import Analytics  from './components/Analytics'
@@ -7,6 +8,7 @@ import Sales      from './components/Sales'
 import Orders     from './components/Orders'
 import Export     from './components/Export'
 import CierreCaja from './components/CierreCaja'
+import Users      from './components/Users'
 import Login      from './components/Login'
 
 function LoadingScreen() {
@@ -37,9 +39,8 @@ function ErrorScreen({ message }) {
 }
 
 function AppContent() {
-  const { loading, dbError } = useApp()
+  const { loading, dbError, userRole, user, logout } = useApp()
   const [active, setActive]       = useState('analytics')
-  // Persist sidebar state: default collapsed on small screens
   const [collapsed, setCollapsed] = useState(() => {
     const saved = localStorage.getItem('eb_sidebar')
     if (saved !== null) return saved === '1'
@@ -63,6 +64,9 @@ function AppContent() {
         onNav={setActive}
         collapsed={collapsed}
         onToggle={handleToggle}
+        userRole={userRole}
+        user={user}
+        onLogout={logout}
       />
       <main className="flex-1 overflow-y-auto min-w-0">
         {active === 'analytics' && <Analytics />}
@@ -71,13 +75,27 @@ function AppContent() {
         {active === 'orders'    && <Orders />}
         {active === 'export'    && <Export />}
         {active === 'caja'      && <CierreCaja />}
+        {active === 'users'     && userRole === 'admin' && <Users />}
       </main>
     </div>
   )
 }
 
 export default function App() {
-  const [auth, setAuth] = useState(() => sessionStorage.getItem('eb_auth') === '1')
-  if (!auth) return <Login onAuth={() => setAuth(true)} />
-  return <AppProvider><AppContent /></AppProvider>
+  // undefined = still checking, null = no session, object = authenticated
+  const [session, setSession] = useState(undefined)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session ?? null)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session ?? null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (session === undefined) return <LoadingScreen />
+  if (!session)              return <Login />
+  return <AppProvider user={session.user}><AppContent /></AppProvider>
 }

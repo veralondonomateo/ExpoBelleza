@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import {
   X, Plus, Minus, Trash2, Check, ChevronRight,
   Banknote, Smartphone, CreditCard, AlertTriangle, RotateCcw,
-  User, ShoppingBag, Zap, ScanLine, Camera,
+  User, ShoppingBag, Zap, ScanLine, Camera, Tag, Split,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { fmt$ } from '../utils/formatters'
@@ -15,16 +15,18 @@ const PAY_METHODS = [
 ]
 
 function SuccessOverlay({ sale, onNew }) {
+  const subtotal = (sale.items ?? []).reduce((a, i) => a + i.price * i.quantity, 0)
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-3xl shadow-modal w-full max-w-md text-center p-8">
-        <div className="w-18 h-18 w-16 h-16 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4">
+        <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4">
           <Check size={32} className="text-green-500" strokeWidth={2.5} />
         </div>
         <h2 className="text-lg font-bold text-gray-800 mb-1">¡Venta completada!</h2>
         <p className="text-sm text-gray-400 mb-5">
           {sale.customer?.name && <><strong className="text-gray-600">{sale.customer.name}</strong> · </>}
-          {fmt$(sale.total)} · <span className="capitalize">{sale.paymentMethod}</span>
+          <span className="capitalize">{sale.paymentMethod}</span>
+          {sale.secondPaymentMethod && <> + <span className="capitalize">{sale.secondPaymentMethod}</span></>}
         </p>
         <div className="bg-gray-50 rounded-2xl p-4 mb-6 text-left space-y-2">
           {sale.items?.map((item, i) => (
@@ -33,9 +35,20 @@ function SuccessOverlay({ sale, onNew }) {
               <span className="font-semibold text-gray-800 flex-shrink-0">{fmt$(item.price * item.quantity)}</span>
             </div>
           ))}
+          {sale.discount > 0 && (
+            <div className="flex justify-between text-sm text-green-600">
+              <span>Descuento</span><span>-{fmt$(sale.discount)}</span>
+            </div>
+          )}
           <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-gray-800">
             <span>Total</span><span>{fmt$(sale.total)}</span>
           </div>
+          {sale.secondPaymentMethod && sale.secondPaymentAmount > 0 && (
+            <div className="border-t border-gray-100 pt-2 space-y-1 text-xs text-gray-400">
+              <div className="flex justify-between"><span className="capitalize">{sale.paymentMethod}</span><span>{fmt$(sale.total - sale.secondPaymentAmount)}</span></div>
+              <div className="flex justify-between"><span className="capitalize">{sale.secondPaymentMethod}</span><span>{fmt$(sale.secondPaymentAmount)}</span></div>
+            </div>
+          )}
         </div>
         <button onClick={onNew}
           className="w-full py-3.5 bg-brand-red text-white rounded-xl font-semibold text-sm hover:bg-brand-red/90 transition flex items-center justify-center gap-2">
@@ -49,16 +62,20 @@ function SuccessOverlay({ sale, onNew }) {
 export default function Sales({ onNav }) {
   const { products, addSale } = useApp()
 
-  const [scanMode,    setScanMode]    = useState(false)
-  const [cameraOpen,  setCameraOpen]  = useState(false)
-  const [scanError,   setScanError]   = useState(null)
-  const [lastAdded,   setLastAdded]   = useState(null)
-  const [cart,        setCart]        = useState([])
-  const [customer,    setCustomer]    = useState({ name: '', phone: '', email: '', document: '' })
-  const [payMethod,   setPayMethod]   = useState('efectivo')
-  const [success,     setSuccess]     = useState(null)
-  const [formError,   setFormError]   = useState(null)
-  const [saving,      setSaving]      = useState(false)
+  const [scanMode,     setScanMode]     = useState(false)
+  const [cameraOpen,   setCameraOpen]   = useState(false)
+  const [scanError,    setScanError]    = useState(null)
+  const [lastAdded,    setLastAdded]    = useState(null)
+  const [cart,         setCart]         = useState([])
+  const [customer,     setCustomer]     = useState({ name: '', phone: '', email: '', document: '' })
+  const [payMethod,    setPayMethod]    = useState('efectivo')
+  const [discount,     setDiscount]     = useState(0)
+  const [splitPay,     setSplitPay]     = useState(false)
+  const [secondMethod, setSecondMethod] = useState('transferencia')
+  const [secondAmount, setSecondAmount] = useState('')
+  const [success,      setSuccess]      = useState(null)
+  const [formError,    setFormError]    = useState(null)
+  const [saving,       setSaving]       = useState(false)
 
   const scanInputRef = useRef(null)
 
@@ -121,16 +138,28 @@ export default function Sales({ onNav }) {
 
   const updateQty  = (id, d) => setCart(p => p.map(i => i.productId === id ? { ...i, quantity: Math.max(1, i.quantity + d) } : i))
   const removeItem = (id)    => setCart(p => p.filter(i => i.productId !== id))
-  const total      = cart.reduce((a, i) => a + i.price * i.quantity, 0)
+  const subtotal   = cart.reduce((a, i) => a + i.price * i.quantity, 0)
+  const finalTotal = Math.max(0, subtotal - discount)
   const noPrice    = cart.some(i => i.price === 0)
+  const secondAmt  = parseFloat(secondAmount) || 0
 
   const handleFinalize = async () => {
     if (cart.length === 0)     { setFormError('Agrega al menos un producto.'); return }
     if (!customer.name.trim()) { setFormError('El nombre del cliente es obligatorio.'); return }
+    if (splitPay && secondAmt <= 0) { setFormError('Indica el monto del segundo pago.'); return }
+    if (splitPay && secondAmt >= finalTotal) { setFormError('El segundo pago no puede ser mayor o igual al total.'); return }
     setFormError(null)
     setSaving(true)
     try {
-      const sale = await addSale({ items: cart, customer, paymentMethod: payMethod, total })
+      const sale = await addSale({
+        items:               cart,
+        customer,
+        paymentMethod:       payMethod,
+        total:               finalTotal,
+        discount,
+        secondPaymentMethod: splitPay ? secondMethod : null,
+        secondPaymentAmount: splitPay ? secondAmt    : null,
+      })
       setSuccess(sale)
     } catch {
       setFormError('Error al guardar la venta. Intenta de nuevo.')
@@ -143,6 +172,7 @@ export default function Sales({ onNav }) {
     setSuccess(null); setCart([])
     setCustomer({ name: '', phone: '', email: '', document: '' })
     setPayMethod('efectivo'); setScanMode(false)
+    setDiscount(0); setSplitPay(false); setSecondAmount('')
   }
 
   return (
@@ -309,8 +339,8 @@ export default function Sales({ onNav }) {
                   )
                 })}
                 <div className="px-4 py-3 bg-gray-50/60 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-gray-600">Total</span>
-                  <span className="text-xl font-bold text-brand-red">{fmt$(total)}</span>
+                  <span className="text-sm font-semibold text-gray-600">Subtotal</span>
+                  <span className="text-xl font-bold text-brand-red">{fmt$(subtotal)}</span>
                 </div>
               </div>
             )}
@@ -350,6 +380,30 @@ export default function Sales({ onNav }) {
             </div>
           </div>
 
+          {/* Discount */}
+          <div className="bg-white rounded-2xl shadow-card p-4">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <Tag size={14} className="text-brand-red flex-shrink-0" />
+              Descuento
+            </h2>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number" min="0" value={discount || ''}
+                onChange={e => { setDiscount(Math.max(0, Number(e.target.value))); if (scanMode) refocus() }}
+                onMouseDown={e => e.stopPropagation()}
+                data-customer-field="true"
+                placeholder="0"
+                className="w-full pl-7 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red transition"
+              />
+            </div>
+            {discount > 0 && (
+              <p className="text-xs text-brand-red mt-1.5 font-medium">
+                Total con descuento: {fmt$(finalTotal)}
+              </p>
+            )}
+          </div>
+
           {/* Payment method */}
           <div className="bg-white rounded-2xl shadow-card p-4">
             <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -377,14 +431,78 @@ export default function Sales({ onNav }) {
                 </button>
               ))}
             </div>
+
+            {/* Split payment toggle */}
+            <label
+              onMouseDown={e => e.preventDefault()}
+              className="flex items-center gap-2.5 mt-3 pt-3 border-t border-gray-50 cursor-pointer select-none"
+            >
+              <input type="checkbox" checked={splitPay}
+                onChange={e => { setSplitPay(e.target.checked); if (scanMode) refocus() }}
+                className="rounded accent-brand-red w-3.5 h-3.5" />
+              <Split size={13} className="text-gray-400" />
+              <span className="text-xs font-semibold text-gray-500">Pago dividido</span>
+            </label>
+
+            {splitPay && (
+              <div className="mt-3 space-y-3">
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1.5">Segundo método</p>
+                  <div className="grid grid-cols-3 xl:grid-cols-1 gap-2">
+                    {PAY_METHODS.filter(m => m.id !== payMethod).map(({ id, label, icon: Icon, color }) => (
+                      <button key={id}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => { setSecondMethod(id); if (scanMode) refocus() }}
+                        className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all text-left ${
+                          secondMethod === id ? 'border-brand-red bg-brand-soft' : 'border-gray-100 hover:border-gray-200'
+                        }`}
+                      >
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: color + '18' }}>
+                          <Icon size={13} style={{ color }} />
+                        </div>
+                        <span className={`text-xs font-semibold truncate ${secondMethod === id ? 'text-brand-red' : 'text-gray-600'}`}>
+                          {label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1.5">
+                    Monto {PAY_METHODS.find(m => m.id === secondMethod)?.label}
+                  </p>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                    <input type="number" min="0" value={secondAmount}
+                      onChange={e => { setSecondAmount(e.target.value); if (scanMode) refocus() }}
+                      onMouseDown={e => e.stopPropagation()}
+                      data-customer-field="true"
+                      placeholder="0"
+                      className="w-full pl-7 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red transition" />
+                  </div>
+                  {secondAmt > 0 && finalTotal > 0 && (
+                    <p className="text-xs text-gray-400 mt-1.5">
+                      {PAY_METHODS.find(m => m.id === payMethod)?.label}: {fmt$(Math.max(0, finalTotal - secondAmt))}
+                      {' · '}
+                      {PAY_METHODS.find(m => m.id === secondMethod)?.label}: {fmt$(secondAmt)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Total + Finalize */}
           <div className="bg-white rounded-2xl shadow-card p-4">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-1">
               <span className="text-sm text-gray-500">Total a cobrar</span>
-              <span className="text-2xl font-bold text-brand-red">{fmt$(total)}</span>
+              <span className="text-2xl font-bold text-brand-red">{fmt$(finalTotal)}</span>
             </div>
+            {discount > 0 && (
+              <p className="text-xs text-green-600 font-medium mb-3 text-right">Descuento aplicado: -{fmt$(discount)}</p>
+            )}
+            {!discount && <div className="mb-4" />}
 
             {noPrice && (
               <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl mb-3">

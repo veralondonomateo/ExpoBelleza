@@ -3,7 +3,7 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import { TrendingUp, ShoppingCart, DollarSign, Users, Banknote, Smartphone, CreditCard } from 'lucide-react'
+import { TrendingUp, ShoppingCart, DollarSign, Users, Banknote, Smartphone, CreditCard, User } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { fmt$, fmtDate, isToday } from '../utils/formatters'
 
@@ -61,7 +61,8 @@ function PayCard({ icon: Icon, label, amount, count, color }) {
 }
 
 export default function Analytics() {
-  const { sales, products } = useApp()
+  const { sales, products, userRole } = useApp()
+  const isAdmin = userRole === 'admin'
 
   const stats = useMemo(() => {
     const total = sales.length
@@ -102,6 +103,18 @@ export default function Analytics() {
     [...sales].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8),
     [sales]
   )
+
+  const byUser = useMemo(() => {
+    const map = {}
+    sales.forEach(s => {
+      const key = s.userId || '__unknown__'
+      if (!map[key]) map[key] = { name: s.userName || 'Sin nombre', count: 0, revenue: 0, items: 0 }
+      map[key].count += 1
+      map[key].revenue += s.total
+      map[key].items += (s.items ?? []).reduce((a, i) => a + i.quantity, 0)
+    })
+    return Object.values(map).sort((a, b) => b.revenue - a.revenue)
+  }, [sales])
 
   const todayStr = new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
 
@@ -194,6 +207,54 @@ export default function Analytics() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Per-user breakdown — admin only */}
+      {isAdmin && byUser.length > 0 && (
+        <div className="bg-white rounded-xl shadow-card overflow-hidden">
+          <div className="px-4 py-3.5 border-b border-gray-50">
+            <p className="text-sm font-semibold text-gray-700">Ventas por vendedora</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">Desglose por usuario</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px]">
+              <thead>
+                <tr className="bg-gray-50/70">
+                  {['Vendedora', 'Ventas', 'Productos', 'Ingresos'].map(h => (
+                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {byUser.map((u, i) => (
+                  <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-brand-light flex items-center justify-center flex-shrink-0">
+                          <User size={12} className="text-brand-red" />
+                        </div>
+                        <p className="text-sm font-semibold text-gray-700">{u.name}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-brand-soft text-brand-red">
+                        {u.count} {u.count === 1 ? 'venta' : 'ventas'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-sm text-gray-600">{u.items} uds.</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-sm font-bold text-gray-800">{fmt$(u.revenue)}</p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
