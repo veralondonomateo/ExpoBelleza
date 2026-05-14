@@ -9,7 +9,7 @@ const ROLES = [
 
 function UserModal({ user, onSave, onClose }) {
   const isNew = !user
-  const [fullName, setFullName] = useState(user?.full_name ?? '')
+  const [fullName, setFullName] = useState(user?.name ?? '')
   const [email,    setEmail]    = useState(user?.email    ?? '')
   const [password, setPassword] = useState('')
   const [role,     setRole]     = useState(user?.role     ?? 'vendedora')
@@ -122,7 +122,7 @@ export default function Users() {
     if (fnErr || data?.error) {
       setError(fnErr?.message || data?.error || 'Error al cargar usuarios')
     } else {
-      setUsers(data?.users ?? [])
+      setUsers(data?.profiles ?? [])
     }
     setLoading(false)
   }, [])
@@ -130,9 +130,10 @@ export default function Users() {
   useEffect(() => { load() }, [load])
 
   const handleSave = async ({ id, fullName, email, password, role }) => {
-    const action = id ? 'update' : 'create'
-    const body = { action, id, full_name: fullName, email, role }
-    if (password) body.password = password
+    const isUpdate = !!id
+    const body = isUpdate
+      ? { action: 'update', userId: id, name: fullName, role, ...(password ? { password } : {}) }
+      : { action: 'create', email, password, name: fullName, role }
     const { data, error: fnErr } = await invoke(body)
     if (fnErr || data?.error) throw new Error(fnErr?.message || data?.error || 'Error al guardar')
     await load()
@@ -140,7 +141,7 @@ export default function Users() {
 
   const handleDelete = async (userId) => {
     setDeleting(userId)
-    const { data, error: fnErr } = await invoke({ action: 'delete', id: userId })
+    const { data, error: fnErr } = await invoke({ action: 'delete', userId })
     if (fnErr || data?.error) {
       setError(fnErr?.message || data?.error || 'Error al eliminar')
     } else {
@@ -205,10 +206,10 @@ export default function Users() {
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-full bg-brand-light flex items-center justify-center flex-shrink-0">
                           <span className="text-[11px] font-bold text-brand-red uppercase">
-                            {(u.full_name || u.email || '?')[0]}
+                            {(u.name || u.email || '?')[0]}
                           </span>
                         </div>
-                        <p className="text-sm font-semibold text-gray-700 truncate">{u.full_name || '—'}</p>
+                        <p className="text-sm font-semibold text-gray-700 truncate">{u.name || '—'}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -230,7 +231,7 @@ export default function Users() {
                           <Edit2 size={13} />
                         </button>
                         <button
-                          onClick={() => { if (window.confirm(`¿Eliminar a ${u.full_name || u.email}?`)) handleDelete(u.id) }}
+                          onClick={() => { if (window.confirm(`¿Eliminar a ${u.name || u.email}?`)) handleDelete(u.id) }}
                           disabled={deleting === u.id}
                           className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:border-red-200 hover:text-red-500 hover:bg-red-50 transition disabled:opacity-40">
                           {deleting === u.id

@@ -16,7 +16,7 @@ export function AppProvider({ user, children }) {
     async function init() {
       try {
         const [{ data: prof }, prods, sls] = await Promise.all([
-          supabase.from('profiles').select('role, full_name').eq('id', user.id).single(),
+          supabase.from('profiles').select('role, name').eq('id', user.id).single(),
           getProducts(),
           getSales(),
         ])
@@ -49,7 +49,7 @@ export function AppProvider({ user, children }) {
       const sale = await dbAddSale({
         ...data,
         userId:   user.id,
-        userName: profile?.full_name || user.email?.split('@')[0] || null,
+        userName: profile?.name || user.email?.split('@')[0] || null,
       })
       setProducts(prev =>
         prev.map(p => {
