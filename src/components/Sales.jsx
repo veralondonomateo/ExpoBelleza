@@ -23,6 +23,11 @@ function SuccessOverlay({ sale, onNew }) {
           <Check size={32} className="text-green-500" strokeWidth={2.5} />
         </div>
         <h2 className="text-lg font-bold text-gray-800 mb-1">¡Venta completada!</h2>
+        {sale.invoice?.name && (
+          <div className="inline-flex items-center gap-1.5 bg-brand-soft text-brand-red text-xs font-bold px-3 py-1.5 rounded-full mb-3">
+            Factura electrónica {sale.invoice.name}
+          </div>
+        )}
         <p className="text-sm text-gray-400 mb-5">
           {sale.customer?.name && <><strong className="text-gray-600">{sale.customer.name}</strong> · </>}
           <span className="capitalize">{sale.paymentMethod}</span>
@@ -144,8 +149,9 @@ export default function Sales({ onNav }) {
   const secondAmt  = parseFloat(secondAmount) || 0
 
   const handleFinalize = async () => {
-    if (cart.length === 0)     { setFormError('Agrega al menos un producto.'); return }
-    if (!customer.name.trim()) { setFormError('El nombre del cliente es obligatorio.'); return }
+    if (cart.length === 0)          { setFormError('Agrega al menos un producto.'); return }
+    if (!customer.name.trim())      { setFormError('El nombre del cliente es obligatorio.'); return }
+    if (!customer.document.trim())  { setFormError('La cédula/NIT es obligatoria para generar la factura electrónica.'); return }
     if (splitPay && secondAmt <= 0) { setFormError('Indica el monto del segundo pago.'); return }
     if (splitPay && secondAmt >= finalTotal) { setFormError('El segundo pago no puede ser mayor o igual al total.'); return }
     setFormError(null)
@@ -161,8 +167,8 @@ export default function Sales({ onNav }) {
         secondPaymentAmount: splitPay ? secondAmt    : null,
       })
       setSuccess(sale)
-    } catch {
-      setFormError('Error al guardar la venta. Intenta de nuevo.')
+    } catch (err) {
+      setFormError(err?.message || 'Error al guardar la venta. Intenta de nuevo.')
     } finally {
       setSaving(false)
     }
@@ -361,7 +367,7 @@ export default function Sales({ onNav }) {
                 { key: 'name',     label: 'Nombre completo *', placeholder: 'María García',    type: 'text'  },
                 { key: 'phone',    label: 'Celular',            placeholder: '3001234567',      type: 'tel'   },
                 { key: 'email',    label: 'Correo electrónico', placeholder: 'maria@email.com', type: 'email' },
-                { key: 'document', label: 'Cédula / NIT',       placeholder: '1234567890',      type: 'text'  },
+                { key: 'document', label: 'Cédula / NIT *',      placeholder: '1234567890',      type: 'text'  },
               ].map(({ key, label, placeholder, type }) => (
                 <div key={key}>
                   <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest block mb-1">
@@ -527,7 +533,7 @@ export default function Sales({ onNav }) {
               className="w-full py-3.5 bg-brand-red text-white rounded-xl font-bold text-sm hover:bg-brand-red/90 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
             >
               {saving
-                ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Guardando...</>
+                ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Generando factura...</>
                 : <><Check size={16} strokeWidth={2.5} /> Finalizar compra <ChevronRight size={15} /></>
               }
             </button>

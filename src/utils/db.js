@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { createSiigoInvoice } from './siigo'
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,20 @@ export async function getSales() {
 }
 
 export async function addSale(data) {
+  const today = new Date().toISOString().split('T')[0]
+
+  // Create electronic invoice in Siigo first — if this fails the sale is not saved
+  const invoice = await createSiigoInvoice({
+    customer:            data.customer,
+    items:               data.items,
+    paymentMethod:       data.paymentMethod,
+    total:               data.total,
+    discount:            data.discount            ?? 0,
+    secondPaymentMethod: data.secondPaymentMethod ?? null,
+    secondPaymentAmount: data.secondPaymentAmount ?? null,
+    date:                today,
+  })
+
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
   const now = new Date().toISOString()
 
@@ -81,6 +96,10 @@ export async function addSale(data) {
       customer_phone:        data.customer?.phone       || null,
       customer_email:        data.customer?.email       || null,
       customer_document:     data.customer?.document    || null,
+      siigo_invoice_id:      invoice.id,
+      siigo_invoice_prefix:  invoice.prefix,
+      siigo_invoice_number:  invoice.number,
+      siigo_invoice_name:    invoice.name,
       created_at:            now,
     })
   if (saleErr) throw saleErr
@@ -115,7 +134,7 @@ export async function addSale(data) {
     }
   }
 
-  return { id, date: now, ...data }
+  return { id, date: now, ...data, invoice }
 }
 
 // ── Cierres de caja ───────────────────────────────────────────────────────────
