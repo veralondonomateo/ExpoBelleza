@@ -84,9 +84,34 @@ async function getSellerId(): Promise<number> {
 
 async function getDocumentTypeId(): Promise<number> {
   if (cachedDocumentTypeId) return cachedDocumentTypeId;
-  const d = await siigoRequest("GET", "/v1/document-types", undefined, { type: "FV" });
-  const fv = d.results?.find((r: any) => r.keyword === "FV") ?? d.results?.[0];
-  if (!fv) throw new Error("No se encontró tipo de documento FV en Siigo");
+
+  // Siigo can return either an array or { results: [...] }
+  function toArray(d: any): any[] {
+    if (Array.isArray(d)) return d;
+    if (Array.isArray(d?.results)) return d.results;
+    return [];
+  }
+
+  // Try with FV filter first
+  let results = toArray(await siigoRequest("GET", "/v1/document-types", undefined, { type: "FV" }));
+
+  // If empty, fetch all types and filter manually
+  if (results.length === 0) {
+    const all = toArray(await siigoRequest("GET", "/v1/document-types"));
+    results = all.filter((r: any) =>
+      r.keyword === "FV" || r.type === "FV" || r.code === "FV" ||
+      (r.name || "").toLowerCase().includes("factura de venta") ||
+      (r.name || "").toLowerCase().includes("factura venta")
+    );
+    if (results.length === 0) results = all; // last resort: use any
+  }
+
+  // Pick exact FV match or first available
+  const fv = results.find((r: any) =>
+    r.keyword === "FV" || r.type === "FV" || r.code === "FV"
+  ) ?? results[0];
+
+  if (!fv) throw new Error("No se encontró tipo de documento FV en Siigo. Verifica que tu cuenta tenga Facturas de Venta configuradas.");
   cachedDocumentTypeId = fv.id;
   return cachedDocumentTypeId!;
 }
@@ -165,17 +190,22 @@ async function ensureCustomer(customer: {
     });
   } catch (err: any) {
     const msg = (err.message || "").toLowerCase();
-    // "already exists" errors are fine — customer is already in Siigo
+    // Customer already exists in Siigo — that's fine, continue
     if (
       msg.includes("ya exist") ||
       msg.includes("duplicad") ||
       msg.includes("identificación") ||
-      msg.includes("identificacion")
+      msg.includes("identificacion") ||
+      msg.includes("already exist") ||
+      msg.includes("conflict") ||
+      msg.includes("409")
     ) {
       knownCustomers.add(customer.document);
       return;
     }
-    throw err;
+    // If customer creation fails for any other reason, log but don't block the invoice
+    // Siigo will reject the invoice itself if the customer truly doesn't exist
+    console.warn("Advertencia al crear cliente en Siigo:", err.message);
   }
   knownCustomers.add(customer.document);
 }
