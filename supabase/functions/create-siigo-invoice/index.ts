@@ -167,13 +167,14 @@ async function ensureCustomer(customer: {
   const firstName = parts[0] || "Cliente";
   const lastName = parts.slice(1).join(" ") || "Final";
   const phone = customer.phone?.replace(/\D/g, "");
+  const docClean = customer.document.replace(/\s+/g, "").trim();
 
   try {
     await siigoRequest("POST", "/v1/customers", {
       type: "Customer",
       person_type: "Person",
       id_type: { code: "CC" },
-      identification: customer.document,
+      identification: docClean,
       name: [firstName, lastName],
       commercial_name: customer.name.trim(),
       active: true,
@@ -270,7 +271,7 @@ serve(async (req) => {
     const invoice = await siigoRequest("POST", "/v1/invoices", {
       document: { id: docTypeIdVal },
       date: sale.date,
-      customer: { identification: sale.customer.document, branch_office: 0 },
+      customer: { identification: sale.customer.document.replace(/\s+/g, "").trim(), branch_office: 0 },
       seller: sellerIdVal,
       items,
       payments,
