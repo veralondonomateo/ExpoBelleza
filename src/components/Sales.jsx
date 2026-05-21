@@ -1,9 +1,20 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   X, Plus, Minus, Trash2, Check, ChevronRight,
   Banknote, Smartphone, CreditCard, AlertTriangle, RotateCcw,
-  User, ShoppingBag, Zap, ScanLine, Camera, Tag, Split,
+  User, ShoppingBag, Zap, ScanLine, Camera, Tag, Split, Download,
 } from 'lucide-react'
+
+function downloadPdf(base64, invoiceName) {
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+  const blob = new Blob([bytes], { type: 'application/pdf' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${invoiceName}.pdf`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 import { useApp } from '../context/AppContext'
 import { fmt$ } from '../utils/formatters'
 import CameraScanner from './CameraScanner'
@@ -16,6 +27,14 @@ const PAY_METHODS = [
 
 function SuccessOverlay({ sale, onNew }) {
   const subtotal = (sale.items ?? []).reduce((a, i) => a + i.price * i.quantity, 0)
+  const invoice = sale.invoice
+
+  useEffect(() => {
+    if (invoice?.pdfBase64 && invoice?.name) {
+      downloadPdf(invoice.pdfBase64, invoice.name)
+    }
+  }, [])
+
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-3xl shadow-modal w-full max-w-md text-center p-8">
@@ -23,9 +42,9 @@ function SuccessOverlay({ sale, onNew }) {
           <Check size={32} className="text-green-500" strokeWidth={2.5} />
         </div>
         <h2 className="text-lg font-bold text-gray-800 mb-1">¡Venta completada!</h2>
-        {sale.invoice?.name && (
+        {invoice?.name && (
           <div className="inline-flex items-center gap-1.5 bg-brand-soft text-brand-red text-xs font-bold px-3 py-1.5 rounded-full mb-3">
-            Factura electrónica {sale.invoice.name}
+            Factura electrónica {invoice.name}
           </div>
         )}
         <p className="text-sm text-gray-400 mb-5">
@@ -55,6 +74,14 @@ function SuccessOverlay({ sale, onNew }) {
             </div>
           )}
         </div>
+        {invoice?.pdfBase64 && (
+          <button
+            onClick={() => downloadPdf(invoice.pdfBase64, invoice.name)}
+            className="w-full py-3 border border-brand-red text-brand-red rounded-xl font-semibold text-sm hover:bg-brand-soft transition flex items-center justify-center gap-2 mb-3"
+          >
+            <Download size={16} /> Descargar factura PDF
+          </button>
+        )}
         <button onClick={onNew}
           className="w-full py-3.5 bg-brand-red text-white rounded-xl font-semibold text-sm hover:bg-brand-red/90 transition flex items-center justify-center gap-2">
           <Zap size={16} /> Nueva venta

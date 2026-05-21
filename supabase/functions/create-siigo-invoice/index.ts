@@ -248,8 +248,18 @@ serve(async (req) => {
     });
 
     const invoiceName = `${invoice.prefix || "FV"}-${invoice.number}`;
+
+    // Fetch PDF base64 — best-effort, don't fail the invoice if this errors
+    let pdfBase64: string | null = null;
+    try {
+      const pdf = await siigoRequest("GET", `/v1/invoices/${invoice.id}/pdf`);
+      pdfBase64 = pdf.base64 ?? null;
+    } catch {
+      // PDF not yet available (e.g. stamp pending) — client can retry later
+    }
+
     return new Response(
-      JSON.stringify({ id: invoice.id, prefix: invoice.prefix, number: invoice.number, name: invoiceName }),
+      JSON.stringify({ id: invoice.id, prefix: invoice.prefix, number: invoice.number, name: invoiceName, pdfBase64 }),
       { headers: { ...CORS, "Content-Type": "application/json" } },
     );
   } catch (err: any) {
