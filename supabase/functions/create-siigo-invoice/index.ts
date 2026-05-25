@@ -15,12 +15,18 @@ const PRODUCT_CODES: Record<string, string> = {
   "soda-prebiotica": "25",
 };
 
+// Fixed Siigo payment method IDs (efectivo: 11050501, transferencia/tarjeta: 11100501)
+const PAYMENT_TYPE_IDS: Record<string, number> = {
+  efectivo:      11050501,
+  transferencia: 11100501,
+  tarjeta:       11100501,
+};
+
 // Module-level cache (persists within Deno isolate across warm requests)
 let cachedToken: string | null = null;
 let cachedTokenExpiry: Date | null = null;
 let cachedSellerId: number | null = null;
 let cachedDocumentTypeId: number | null = null;
-const paymentTypeCache: Record<string, number> = {};
 const productTaxCache: Record<string, number[]> = {};
 const knownCustomers = new Set<string>();
 
@@ -116,23 +122,10 @@ async function getDocumentTypeId(): Promise<number> {
   return cachedDocumentTypeId!;
 }
 
-async function getPaymentTypeId(method: string): Promise<number> {
-  if (paymentTypeCache[method] !== undefined) return paymentTypeCache[method];
-  const d = await siigoRequest("GET", "/v1/payment-types", undefined, { document_type: "FV" });
-  for (const pt of d.results ?? []) {
-    const name = (pt.name || "").toLowerCase();
-    if (name.includes("efectivo") || name.includes("contado")) paymentTypeCache["efectivo"] = pt.id;
-    if (name.includes("transf") || name.includes("consign")) paymentTypeCache["transferencia"] = pt.id;
-    if (name.includes("tarjeta") || name.includes("cred") || name.includes("débito") || name.includes("debito")) {
-      paymentTypeCache["tarjeta"] = pt.id;
-    }
-  }
-  if (paymentTypeCache[method] === undefined) {
-    const fallback = d.results?.[0];
-    if (!fallback) throw new Error(`Método de pago "${method}" no encontrado en Siigo`);
-    paymentTypeCache[method] = fallback.id;
-  }
-  return paymentTypeCache[method];
+function getPaymentTypeId(method: string): number {
+  const id = PAYMENT_TYPE_IDS[method];
+  if (id === undefined) throw new Error(`Método de pago "${method}" no está configurado`);
+  return id;
 }
 
 async function getProductTaxes(siigoCode: string): Promise<number[]> {
@@ -257,15 +250,10 @@ serve(async (req) => {
     // Build payments
     const payments: Array<{ id: number; value: number }> = [];
     if (sale.secondPaymentMethod && sale.secondPaymentAmount > 0) {
-      const [id1, id2] = await Promise.all([
-        getPaymentTypeId(sale.paymentMethod),
-        getPaymentTypeId(sale.secondPaymentMethod),
-      ]);
-      payments.push({ id: id1, value: sale.total - sale.secondPaymentAmount });
-      payments.push({ id: id2, value: sale.secondPaymentAmount });
+      payments.push({ id: getPaymentTypeId(sale.paymentMethod),       value: sale.total - sale.secondPaymentAmount });
+      payments.push({ id: getPaymentTypeId(sale.secondPaymentMethod), value: sale.secondPaymentAmount });
     } else {
-      const id = await getPaymentTypeId(sale.paymentMethod);
-      payments.push({ id, value: sale.total });
+      payments.push({ id: getPaymentTypeId(sale.paymentMethod), value: sale.total });
     }
 
     const invoice = await siigoRequest("POST", "/v1/invoices", {
