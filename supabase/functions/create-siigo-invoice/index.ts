@@ -15,18 +15,12 @@ const PRODUCT_CODES: Record<string, string> = {
   "soda-prebiotica": "25",
 };
 
-// Fixed Siigo payment method IDs (efectivo: 11050501, transferencia/tarjeta: 11100501)
-const PAYMENT_TYPE_IDS: Record<string, number> = {
-  efectivo:      11050501,
-  transferencia: 11100501,
-  tarjeta:       11100501,
-};
-
 // Module-level cache (persists within Deno isolate across warm requests)
 let cachedToken: string | null = null;
 let cachedTokenExpiry: Date | null = null;
 let cachedSellerId: number | null = null;
 let cachedDocumentTypeId: number | null = null;
+const paymentTypeCache: Record<string, number> = {};
 const productTaxCache: Record<string, number[]> = {};
 const knownCustomers = new Set<string>();
 
@@ -71,8 +65,15 @@ async function siigoRequest(method: string, path: string, body?: unknown, qs?: R
   });
   const data = await res.json();
   if (!res.ok) {
-    const msg = data?.errors?.[0]?.Message || data?.message || `HTTP ${res.status}`;
-    throw new Error(msg);
+    // Siigo uses both camelCase and PascalCase depending on the endpoint
+    const msg =
+      data?.Errors?.[0] ||
+      data?.errors?.[0]?.Message ||
+      data?.errors?.[0] ||
+      data?.Message ||
+      data?.message ||
+      JSON.stringify(data).slice(0, 300);
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
   }
   return data;
 }
@@ -122,10 +123,42 @@ async function getDocumentTypeId(): Promise<number> {
   return cachedDocumentTypeId!;
 }
 
-function getPaymentTypeId(method: string): number {
-  const id = PAYMENT_TYPE_IDS[method];
-  if (id === undefined) throw new Error(`Método de pago "${method}" no está configurado`);
-  return id;
+async function getPaymentTypeId(method: string): Promise<number> {
+  if (paymentTypeCache[method] !== undefined) return paymentTypeCache[method];
+
+  // Try with FV filter first, then without filter as fallback
+  let results: any[] = [];
+  try {
+    const d = await siigoRequest("GET", "/v1/payment-types", undefined, { document_type: "FV" });
+    results = d.results ?? (Array.isArray(d) ? d : []);
+  } catch { /* ignore, try without filter */ }
+
+  if (results.length === 0) {
+    const d = await siigoRequest("GET", "/v1/payment-types");
+    results = d.results ?? (Array.isArray(d) ? d : []);
+  }
+
+  console.log("Siigo payment types available:", JSON.stringify(results.map((p: any) => ({ id: p.id, name: p.name }))));
+
+  for (const pt of results) {
+    const name = (pt.name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    if (/efectivo|contado|caja/.test(name))           paymentTypeCache["efectivo"]      = pt.id;
+    if (/transfer|consign|bancolombia|nequi|davip/.test(name)) paymentTypeCache["transferencia"] = pt.id;
+    if (/tarjeta|credit|debit|debito|credito/.test(name))      paymentTypeCache["tarjeta"]       = pt.id;
+  }
+
+  // If still unmatched, use the first available for everything
+  if (results.length > 0) {
+    const fallbackId = results[0].id;
+    if (!paymentTypeCache["efectivo"])      paymentTypeCache["efectivo"]      = fallbackId;
+    if (!paymentTypeCache["transferencia"]) paymentTypeCache["transferencia"] = fallbackId;
+    if (!paymentTypeCache["tarjeta"])       paymentTypeCache["tarjeta"]       = fallbackId;
+  }
+
+  if (paymentTypeCache[method] === undefined) {
+    throw new Error(`Método de pago "${method}" no encontrado. Tipos disponibles: ${results.map((p: any) => p.name).join(", ")}`);
+  }
+  return paymentTypeCache[method];
 }
 
 async function getProductTaxes(siigoCode: string): Promise<number[]> {
@@ -250,10 +283,15 @@ serve(async (req) => {
     // Build payments
     const payments: Array<{ id: number; value: number }> = [];
     if (sale.secondPaymentMethod && sale.secondPaymentAmount > 0) {
-      payments.push({ id: getPaymentTypeId(sale.paymentMethod),       value: sale.total - sale.secondPaymentAmount });
-      payments.push({ id: getPaymentTypeId(sale.secondPaymentMethod), value: sale.secondPaymentAmount });
+      const [id1, id2] = await Promise.all([
+        getPaymentTypeId(sale.paymentMethod),
+        getPaymentTypeId(sale.secondPaymentMethod),
+      ]);
+      payments.push({ id: id1, value: sale.total - sale.secondPaymentAmount });
+      payments.push({ id: id2, value: sale.secondPaymentAmount });
     } else {
-      payments.push({ id: getPaymentTypeId(sale.paymentMethod), value: sale.total });
+      const id = await getPaymentTypeId(sale.paymentMethod);
+      payments.push({ id, value: sale.total });
     }
 
     const invoice = await siigoRequest("POST", "/v1/invoices", {
