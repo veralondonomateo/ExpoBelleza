@@ -199,7 +199,7 @@ async function ensureCustomer(customer: {
     await siigoRequest("POST", "/v1/customers", {
       type: "Customer",
       person_type: "Person",
-      id_type: { code: "CC" },
+      id_type: { id: 13 },
       identification: docClean,
       name: [firstName, lastName],
       commercial_name: customer.name.trim(),
