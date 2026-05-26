@@ -217,22 +217,18 @@ async function ensureCustomer(customer: {
     });
   } catch (err: any) {
     const msg = (err.message || "").toLowerCase();
-    // Customer already exists in Siigo — that's fine, continue
-    if (
+    const isDuplicate =
       msg.includes("ya exist") ||
       msg.includes("duplicad") ||
       msg.includes("identificación") ||
       msg.includes("identificacion") ||
       msg.includes("already exist") ||
       msg.includes("conflict") ||
-      msg.includes("409")
-    ) {
-      knownCustomers.add(customer.document);
-      return;
+      msg.includes("invalid_reference") ||
+      msg.includes("409");
+    if (!isDuplicate) {
+      throw new Error(`Error al crear cliente en Siigo: ${err.message}`);
     }
-    // If customer creation fails for any other reason, log but don't block the invoice
-    // Siigo will reject the invoice itself if the customer truly doesn't exist
-    console.warn("Advertencia al crear cliente en Siigo:", err.message);
   }
   knownCustomers.add(customer.document);
 }
