@@ -6,13 +6,21 @@ const SIIGO_USERNAME = Deno.env.get("SIIGO_USERNAME") || "";
 const SIIGO_ACCESS_KEY = Deno.env.get("SIIGO_ACCESS_KEY") || "";
 const SIIGO_PARTNER_ID = Deno.env.get("SIIGO_PARTNER_ID") || "";
 
-// Mapping from app product IDs to Siigo product codes
 const PRODUCT_CODES: Record<string, string> = {
-  "fem-probiotico": "1",
-  "jabon-intimo": "7",
-  "gomas-pms": "3",
+  "fem-probiotico": "01",
+  "jabon-intimo": "07",
+  "gomas-pms": "03",
   "fem-mom": "18",
   "soda-prebiotica": "25",
+};
+
+// IVA rate (%) per product — prices in the app are tax-inclusive
+const TAX_RATES: Record<string, number> = {
+  "fem-probiotico": 5,
+  "jabon-intimo": 19,
+  "gomas-pms": 5,
+  "fem-mom": 5,
+  "soda-prebiotica": 19,
 };
 
 // Module-level cache (persists within Deno isolate across warm requests)
@@ -20,8 +28,9 @@ let cachedToken: string | null = null;
 let cachedTokenExpiry: Date | null = null;
 let cachedSellerId: number | null = null;
 let cachedDocumentTypeId: number | null = null;
+let cachedIdTypeCC: string | null = null;
 const paymentTypeCache: Record<string, number> = {};
-const productTaxCache: Record<string, number[]> = {};
+const taxIdCache: Record<number, number> = {}; // percentage → Siigo tax type ID
 const knownCustomers = new Set<string>();
 
 const CORS = {
@@ -30,12 +39,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// ── Siigo HTTP helpers ────────────────────────────────────────────────────────
-
 async function getToken(): Promise<string> {
-  if (cachedToken && cachedTokenExpiry && new Date() < cachedTokenExpiry) {
-    return cachedToken;
-  }
+  if (cachedToken && cachedTokenExpiry && new Date() < cachedTokenExpiry) return cachedToken;
   const res = await fetch(`${SIIGO_BASE_URL}/auth`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Partner-Id": SIIGO_PARTNER_ID },
@@ -44,7 +49,6 @@ async function getToken(): Promise<string> {
   if (!res.ok) throw new Error(`Autenticación Siigo falló: ${await res.text()}`);
   const d = await res.json();
   cachedToken = d.access_token;
-  // Expire 60s early to avoid using a token right as it expires
   cachedTokenExpiry = new Date(Date.now() + (d.expires_in - 60) * 1000);
   return cachedToken!;
 }
@@ -65,7 +69,6 @@ async function siigoRequest(method: string, path: string, body?: unknown, qs?: R
   });
   const data = await res.json();
   if (!res.ok) {
-    // Siigo uses both camelCase and PascalCase depending on the endpoint
     const msg =
       data?.Errors?.[0] ||
       data?.errors?.[0]?.Message ||
@@ -77,8 +80,6 @@ async function siigoRequest(method: string, path: string, body?: unknown, qs?: R
   }
   return data;
 }
-
-// ── Catalog helpers ───────────────────────────────────────────────────────────
 
 async function getSellerId(): Promise<number> {
   if (cachedSellerId) return cachedSellerId;
@@ -92,17 +93,13 @@ async function getSellerId(): Promise<number> {
 async function getDocumentTypeId(): Promise<number> {
   if (cachedDocumentTypeId) return cachedDocumentTypeId;
 
-  // Siigo can return either an array or { results: [...] }
   function toArray(d: any): any[] {
     if (Array.isArray(d)) return d;
     if (Array.isArray(d?.results)) return d.results;
     return [];
   }
 
-  // Try with FV filter first
   let results = toArray(await siigoRequest("GET", "/v1/document-types", undefined, { type: "FV" }));
-
-  // If empty, fetch all types and filter manually
   if (results.length === 0) {
     const all = toArray(await siigoRequest("GET", "/v1/document-types"));
     results = all.filter((r: any) =>
@@ -110,130 +107,107 @@ async function getDocumentTypeId(): Promise<number> {
       (r.name || "").toLowerCase().includes("factura de venta") ||
       (r.name || "").toLowerCase().includes("factura venta")
     );
-    if (results.length === 0) results = all; // last resort: use any
+    if (results.length === 0) results = all;
   }
 
-  // Pick exact FV match or first available
-  const fv = results.find((r: any) =>
-    r.keyword === "FV" || r.type === "FV" || r.code === "FV"
-  ) ?? results[0];
+  const fvTypes = results.filter((r: any) => r.keyword === "FV" || r.type === "FV" || r.code === "FV");
+  const pool = fvTypes.length > 0 ? fvTypes : results;
+  const fv = pool.reduce((best: any, r: any) =>
+    (r.consecutive ?? 0) > (best?.consecutive ?? 0) ? r : best
+  , pool[0]);
 
-  if (!fv) throw new Error("No se encontró tipo de documento FV en Siigo. Verifica que tu cuenta tenga Facturas de Venta configuradas.");
+  if (!fv) throw new Error("No se encontró tipo de documento FV en Siigo.");
   cachedDocumentTypeId = fv.id;
   return cachedDocumentTypeId!;
 }
 
 async function getPaymentTypeId(method: string): Promise<number> {
   if (paymentTypeCache[method] !== undefined) return paymentTypeCache[method];
-
-  // Try with FV filter first, then without filter as fallback
   let results: any[] = [];
   try {
     const d = await siigoRequest("GET", "/v1/payment-types", undefined, { document_type: "FV" });
     results = d.results ?? (Array.isArray(d) ? d : []);
-  } catch { /* ignore, try without filter */ }
-
+  } catch { /* ignore */ }
   if (results.length === 0) {
     const d = await siigoRequest("GET", "/v1/payment-types");
     results = d.results ?? (Array.isArray(d) ? d : []);
   }
-
-  console.log("Siigo payment types available:", JSON.stringify(results.map((p: any) => ({ id: p.id, name: p.name }))));
-
+  console.log("Siigo payment types:", JSON.stringify(results.map((p: any) => ({ id: p.id, name: p.name }))));
   for (const pt of results) {
     const name = (pt.name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    if (/efectivo|contado|caja/.test(name))           paymentTypeCache["efectivo"]      = pt.id;
-    if (/transfer|consign|bancolombia|nequi|davip/.test(name)) paymentTypeCache["transferencia"] = pt.id;
-    if (/tarjeta|credit|debit|debito|credito/.test(name))      paymentTypeCache["tarjeta"]       = pt.id;
+    if (/efectivo|contado|caja/.test(name))                      paymentTypeCache["efectivo"]      = pt.id;
+    if (/transfer|consign|bancolombia|nequi|davip/.test(name))   paymentTypeCache["transferencia"] = pt.id;
+    if (/tarjeta|credit|debit|debito|credito/.test(name))        paymentTypeCache["tarjeta"]       = pt.id;
   }
-
-  // If still unmatched, use the first available for everything
   if (results.length > 0) {
-    const fallbackId = results[0].id;
-    if (!paymentTypeCache["efectivo"])      paymentTypeCache["efectivo"]      = fallbackId;
-    if (!paymentTypeCache["transferencia"]) paymentTypeCache["transferencia"] = fallbackId;
-    if (!paymentTypeCache["tarjeta"])       paymentTypeCache["tarjeta"]       = fallbackId;
+    const fb = results[0].id;
+    if (!paymentTypeCache["efectivo"])      paymentTypeCache["efectivo"]      = fb;
+    if (!paymentTypeCache["transferencia"]) paymentTypeCache["transferencia"] = fb;
+    if (!paymentTypeCache["tarjeta"])       paymentTypeCache["tarjeta"]       = fb;
   }
-
-  if (paymentTypeCache[method] === undefined) {
-    throw new Error(`Método de pago "${method}" no encontrado. Tipos disponibles: ${results.map((p: any) => p.name).join(", ")}`);
-  }
+  if (paymentTypeCache[method] === undefined)
+    throw new Error(`Método de pago "${method}" no encontrado.`);
   return paymentTypeCache[method];
 }
 
-async function getProductTaxes(siigoCode: string): Promise<number[]> {
-  if (productTaxCache[siigoCode] !== undefined) return productTaxCache[siigoCode];
-  try {
-    const d = await siigoRequest("GET", "/v1/products", undefined, {
-      code: siigoCode,
-      page: "1",
-      page_size: "100",
-    });
-    const prod = d.results?.find((p: any) => p.code === siigoCode) ?? d.results?.[0];
-    const taxes = (prod?.taxes ?? []).map((t: any) => t.id);
-    productTaxCache[siigoCode] = taxes;
-    return taxes;
-  } catch {
-    productTaxCache[siigoCode] = [];
-    return [];
+async function getTaxId(percentage: number): Promise<number> {
+  if (taxIdCache[percentage] !== undefined) return taxIdCache[percentage];
+  const d = await siigoRequest("GET", "/v1/taxes");
+  const taxes: any[] = d.results ?? (Array.isArray(d) ? d : []);
+  console.log("Siigo taxes:", JSON.stringify(taxes.map((t: any) => ({ id: t.id, name: t.name, percentage: t.percentage }))));
+  for (const tax of taxes) {
+    const pct = Number(tax.percentage ?? tax.rate ?? 0);
+    if (pct === 19) taxIdCache[19] = tax.id;
+    if (pct === 5)  taxIdCache[5]  = tax.id;
+    if (pct === 0)  taxIdCache[0]  = tax.id;
   }
+  if (taxIdCache[percentage] === undefined)
+    throw new Error(`No se encontró IVA ${percentage}% en Siigo. Verifica los impuestos de tu cuenta.`);
+  return taxIdCache[percentage];
 }
 
-// ── Customer handling ─────────────────────────────────────────────────────────
+async function getIdTypeCC(): Promise<string> {
+  if (cachedIdTypeCC) return cachedIdTypeCC;
+  try {
+    const d = await siigoRequest("GET", "/v1/id-types");
+    const types: any[] = d.results ?? (Array.isArray(d) ? d : []);
+    const cc = types.find((t: any) => {
+      const name = (t.name || t.description || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      return name.includes("ciudadan") || name.includes("cedula") || t.code === "CC" || t.id === 13;
+    }) ?? types[0];
+    if (cc) { cachedIdTypeCC = String(cc.id); return cachedIdTypeCC!; }
+  } catch { /* use default */ }
+  cachedIdTypeCC = "13";
+  return cachedIdTypeCC;
+}
 
-async function ensureCustomer(customer: {
-  name: string;
-  document: string;
-  phone?: string;
-  email?: string;
-}): Promise<void> {
+async function ensureCustomer(customer: { name: string; document: string; phone?: string; email?: string }): Promise<void> {
   if (knownCustomers.has(customer.document)) return;
-
   const parts = customer.name.trim().split(/\s+/);
   const firstName = parts[0] || "Cliente";
   const lastName = parts.slice(1).join(" ") || "Final";
-  const phone = customer.phone?.replace(/\D/g, "");
   const docClean = customer.document.replace(/\s+/g, "").trim();
-
+  const idTypeCC = await getIdTypeCC();
   try {
     await siigoRequest("POST", "/v1/customers", {
-      type: "Customer",
-      person_type: "Person",
-      id_type: "CC",
-      identification: docClean,
-      name: [firstName, lastName],
-      commercial_name: customer.name.trim(),
-      active: true,
-      vat_responsible: false,
+      type: "Customer", person_type: "Person", id_type: idTypeCC,
+      identification: docClean, name: [firstName, lastName],
+      commercial_name: customer.name.trim(), active: true, vat_responsible: false,
       fiscal_responsibilities: [{ code: "R-99-PN" }],
-      address: {
-        address: "Sin dirección",
-        city: { country_code: "Co", state_code: "11", city_code: "11001" },
-      },
-      phones: phone ? [{ indicative: "57", number: phone }] : [],
-      contacts: customer.email
-        ? [{ first_name: firstName, last_name: lastName, email: customer.email }]
-        : [],
+      address: { address: "Sin dirección", city: { country_code: "Co", state_code: "11", city_code: "11001" } },
+      phones: [],
+      contacts: customer.email ? [{ first_name: firstName, last_name: lastName, email: customer.email }] : [],
     });
   } catch (err: any) {
     const msg = (err.message || "").toLowerCase();
     const isDuplicate =
-      msg.includes("ya exist") ||
-      msg.includes("duplicad") ||
-      msg.includes("identificación") ||
-      msg.includes("identificacion") ||
-      msg.includes("already exist") ||
-      msg.includes("conflict") ||
-      msg.includes("invalid_reference") ||
-      msg.includes("409");
-    if (!isDuplicate) {
-      throw new Error(`Error al crear cliente en Siigo: ${err.message}`);
-    }
+      msg.includes("ya exist") || msg.includes("duplicad") || msg.includes("identificación") ||
+      msg.includes("identificacion") || msg.includes("already exist") || msg.includes("conflict") ||
+      msg.includes("409") || msg.includes("customers_service");
+    if (!isDuplicate) throw new Error(`Error al crear cliente en Siigo: ${err.message}`);
   }
   knownCustomers.add(customer.document);
 }
-
-// ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -241,7 +215,6 @@ serve(async (req) => {
 
   try {
     const sale = await req.json();
-
     if (!sale.customer?.document?.trim()) {
       return new Response(
         JSON.stringify({ error: "La cédula/NIT del cliente es obligatoria para la factura electrónica" }),
@@ -249,67 +222,67 @@ serve(async (req) => {
       );
     }
 
-    // Fetch seller and document type in parallel
     const [sellerIdVal, docTypeIdVal] = await Promise.all([getSellerId(), getDocumentTypeId()]);
-
-    // Ensure customer exists in Siigo
     await ensureCustomer(sale.customer);
 
-    // Distribute discount proportionally across item prices
     const subtotal: number = sale.items.reduce((s: number, i: any) => s + i.price * i.quantity, 0);
     const discountFactor = subtotal > 0 && sale.discount > 0 ? (subtotal - sale.discount) / subtotal : 1;
 
-    // Build invoice items with taxes fetched from Siigo product catalog
-    const items = await Promise.all(
-      sale.items.map(async (item: any) => {
-        const code = PRODUCT_CODES[item.productId];
-        if (!code) throw new Error(`Producto "${item.productName}" no tiene código Siigo configurado`);
-        const taxes = await getProductTaxes(code);
-        const unitPrice = Math.round(item.price * discountFactor);
-        return {
-          code,
-          description: item.productName,
-          quantity: item.quantity,
-          price: unitPrice,
-          taxes: taxes.map((id: number) => ({ id })),
-        };
-      }),
-    );
+    // Prices are IVA-inclusive. Back-calculate the base price so Siigo shows the
+    // tax breakdown correctly without changing the total the customer pays.
+    const items = await Promise.all(sale.items.map(async (item: any) => {
+      const code = PRODUCT_CODES[item.productId];
+      if (!code) throw new Error(`Producto "${item.productName}" no tiene código Siigo configurado`);
+      const taxRate = TAX_RATES[item.productId] ?? 19;
+      const taxId = await getTaxId(taxRate);
+      const taxInclusivePrice = item.price * discountFactor;
+      // Divide by (1 + rate) to get base; keep 2 decimals to avoid rounding drift
+      const basePrice = Math.round(taxInclusivePrice / (1 + taxRate / 100) * 100) / 100;
+      return {
+        code,
+        description: item.productName,
+        quantity: item.quantity,
+        price: basePrice,
+        taxes: [{ id: taxId, percentage: taxRate }],
+      };
+    }));
 
-    // Build payments
-    const payments: Array<{ id: number; value: number }> = [];
+    const payments: Array<{ id: number; value: number; due_date: string }> = [];
     if (sale.secondPaymentMethod && sale.secondPaymentAmount > 0) {
-      const [id1, id2] = await Promise.all([
-        getPaymentTypeId(sale.paymentMethod),
-        getPaymentTypeId(sale.secondPaymentMethod),
-      ]);
-      payments.push({ id: id1, value: sale.total - sale.secondPaymentAmount });
-      payments.push({ id: id2, value: sale.secondPaymentAmount });
+      const [id1, id2] = await Promise.all([getPaymentTypeId(sale.paymentMethod), getPaymentTypeId(sale.secondPaymentMethod)]);
+      payments.push({ id: id1, value: sale.total - sale.secondPaymentAmount, due_date: sale.date });
+      payments.push({ id: id2, value: sale.secondPaymentAmount, due_date: sale.date });
     } else {
       const id = await getPaymentTypeId(sale.paymentMethod);
-      payments.push({ id, value: sale.total });
+      payments.push({ id, value: sale.total, due_date: sale.date });
     }
 
-    const invoice = await siigoRequest("POST", "/v1/invoices", {
-      document: { id: docTypeIdVal },
-      date: sale.date,
-      customer: { identification: sale.customer.document.replace(/\s+/g, "").trim(), branch_office: 0 },
-      seller: sellerIdVal,
-      items,
-      payments,
-      stamp: { send: true },
-    });
+    let invoice: any;
+    try {
+      invoice = await siigoRequest("POST", "/v1/invoices", {
+        document: { id: docTypeIdVal },
+        date: sale.date,
+        customer: { identification: sale.customer.document.replace(/\s+/g, "").trim(), branch_office: 0 },
+        seller: sellerIdVal, items, payments,
+      });
+    } catch (err: any) {
+      const isDuplicate = (err.message || "").toLowerCase().includes("duplicated_document") ||
+        (err.message || "").toLowerCase().includes("document already exists");
+      if (!isDuplicate) throw err;
+      const existing = await siigoRequest("GET", "/v1/invoices", undefined, {
+        created_start: sale.date, created_end: sale.date, page: "1", page_size: "1",
+      });
+      const recovered = existing.results?.[0];
+      if (!recovered) throw new Error("Factura duplicada en Siigo y no se pudo recuperar.");
+      invoice = recovered;
+    }
 
     const invoiceName = `${invoice.prefix || "FV"}-${invoice.number}`;
-
-    // Fetch PDF base64 — best-effort, don't fail the invoice if this errors
     let pdfBase64: string | null = null;
     try {
       const pdf = await siigoRequest("GET", `/v1/invoices/${invoice.id}/pdf`);
       pdfBase64 = pdf.base64 ?? null;
-    } catch {
-      // PDF not yet available (e.g. stamp pending) — client can retry later
-    }
+    } catch { /* PDF not yet available */ }
 
     return new Response(
       JSON.stringify({ id: invoice.id, prefix: invoice.prefix, number: invoice.number, name: invoiceName, pdfBase64 }),

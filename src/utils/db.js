@@ -89,7 +89,7 @@ export async function addSale(data) {
       payment_method:        data.paymentMethod,
       discount:              data.discount              ?? 0,
       second_payment_method: data.secondPaymentMethod   ?? null,
-      second_payment_amount: data.secondPaymentAmount   ?? null,
+      second_payment_amount: data.secondPaymentAmount   ?? 0,
       user_id:               data.userId                ?? null,
       user_name:             data.userName              ?? null,
       customer_name:         data.customer?.name        || null,

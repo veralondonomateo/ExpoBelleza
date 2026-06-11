@@ -69,11 +69,15 @@ export default function Analytics() {
     const todaySales = sales.filter(s => isToday(s.date))
     const revenue = sales.reduce((a, s) => a + s.total, 0)
     const avg = total ? revenue / total : 0
-    const byPay = {
-      efectivo:      sales.filter(s => s.paymentMethod === 'efectivo'),
-      transferencia: sales.filter(s => s.paymentMethod === 'transferencia'),
-      tarjeta:       sales.filter(s => s.paymentMethod === 'tarjeta'),
-    }
+    const byPay = { efectivo: { total: 0, count: 0 }, transferencia: { total: 0, count: 0 }, tarjeta: { total: 0, count: 0 } }
+    sales.forEach(s => {
+      if (s.secondPaymentMethod && s.secondPaymentAmount > 0) {
+        if (byPay[s.paymentMethod])       { byPay[s.paymentMethod].total       += s.total - s.secondPaymentAmount; byPay[s.paymentMethod].count++ }
+        if (byPay[s.secondPaymentMethod]) { byPay[s.secondPaymentMethod].total += s.secondPaymentAmount;           byPay[s.secondPaymentMethod].count++ }
+      } else {
+        if (byPay[s.paymentMethod]) { byPay[s.paymentMethod].total += s.total; byPay[s.paymentMethod].count++ }
+      }
+    })
     return { total, todaySales, revenue, avg, byPay }
   }, [sales])
 
@@ -136,9 +140,9 @@ export default function Analytics() {
 
       {/* Payment cards — 1 col on mobile, 3 on tablet+ */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <PayCard icon={Banknote}   label="Efectivo"      amount={stats.byPay.efectivo.reduce((a,s)=>a+s.total,0)}      count={stats.byPay.efectivo.length}      color="#34D399" />
-        <PayCard icon={Smartphone} label="Transferencia" amount={stats.byPay.transferencia.reduce((a,s)=>a+s.total,0)} count={stats.byPay.transferencia.length} color="#60A5FA" />
-        <PayCard icon={CreditCard} label="Tarjeta"       amount={stats.byPay.tarjeta.reduce((a,s)=>a+s.total,0)}       count={stats.byPay.tarjeta.length}       color="#A78BFA" />
+        <PayCard icon={Banknote}   label="Efectivo"      amount={stats.byPay.efectivo.total}      count={stats.byPay.efectivo.count}      color="#34D399" />
+        <PayCard icon={Smartphone} label="Transferencia" amount={stats.byPay.transferencia.total} count={stats.byPay.transferencia.count} color="#60A5FA" />
+        <PayCard icon={CreditCard} label="Tarjeta"       amount={stats.byPay.tarjeta.total}       count={stats.byPay.tarjeta.count}       color="#A78BFA" />
       </div>
 
       {/* Charts — stacked on tablet, side by side on xl */}

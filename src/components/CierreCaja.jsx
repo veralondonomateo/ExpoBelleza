@@ -38,9 +38,14 @@ export default function CierreCaja() {
 
   const byPay = useMemo(() => {
     const result = {}
-    PAY.forEach(p => {
-      const items = todaySales.filter(s => s.paymentMethod === p.id)
-      result[p.id] = { count: items.length, total: items.reduce((a, s) => a + s.total, 0) }
+    PAY.forEach(p => { result[p.id] = { count: 0, total: 0 } })
+    todaySales.forEach(s => {
+      if (s.secondPaymentMethod && s.secondPaymentAmount > 0) {
+        if (result[s.paymentMethod])       { result[s.paymentMethod].total       += s.total - s.secondPaymentAmount; result[s.paymentMethod].count++ }
+        if (result[s.secondPaymentMethod]) { result[s.secondPaymentMethod].total += s.secondPaymentAmount;           result[s.secondPaymentMethod].count++ }
+      } else {
+        if (result[s.paymentMethod]) { result[s.paymentMethod].total += s.total; result[s.paymentMethod].count++ }
+      }
     })
     return result
   }, [todaySales])
