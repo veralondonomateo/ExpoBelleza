@@ -71,13 +71,14 @@ async function siigoRequest(method: string, path: string, body?: unknown, qs?: R
   if (!res.ok) {
     const raw = JSON.stringify(data);
     console.error("Siigo error response:", raw.slice(0, 500));
-    const code = data?.Code || data?.code || "";
+    // Siigo may wrap errors in Errors[] array or at top level
+    const errObj = Array.isArray(data) ? data[0] : (data?.Errors?.[0] ?? data?.errors?.[0]);
+    const code =
+      (errObj && typeof errObj === "object" ? (errObj.Code || errObj.code) : "") ||
+      data?.Code || data?.code || "";
     const msg =
-      data?.Errors?.[0] ||
-      data?.errors?.[0]?.Message ||
-      data?.errors?.[0] ||
-      data?.Message ||
-      data?.message ||
+      (errObj && typeof errObj === "string" ? errObj : errObj?.Message || errObj?.message) ||
+      data?.Message || data?.message ||
       raw.slice(0, 300);
     const msgStr = typeof msg === "string" ? msg : JSON.stringify(msg);
     throw new Error(code ? `${code}: ${msgStr}` : msgStr);
@@ -306,8 +307,8 @@ serve(async (req) => {
 
       // Siigo returns the exact expected total in the error — parse and retry
       if (errMsg.includes("invalid_total_payments") || errMsg.toLowerCase().includes("total invoice calculated")) {
-        const m = errMsg.match(/([\d]+(?:\.[\d]+)?)\s*$/);
-        const expectedTotal = m ? parseFloat(m[1]) : NaN;
+        const m = errMsg.match(/calculated is ([\d,.]+)/i) || errMsg.match(/([\d]+\.[\d]{2})/);
+        const expectedTotal = m ? parseFloat(m[1].replace(/,/g, "")) : NaN;
         if (!isNaN(expectedTotal)) {
           console.log("Payment mismatch — retrying with Siigo total:", expectedTotal);
           if (payments.length === 1) {
