@@ -252,32 +252,32 @@ serve(async (req) => {
     const discountFactor = subtotal > 0 && sale.discount > 0 ? (subtotal - sale.discount) / subtotal : 1;
 
     // Prices are IVA-inclusive. Back-calculate the base price so Siigo shows the
-    // tax breakdown correctly without changing the total the customer pays.
+    // tax breakdown correctly. Track what Siigo will actually sum to avoid
+    // invalid_total_payments due to floating-point rounding.
+    let siigoTotal = 0;
     const items = await Promise.all(sale.items.map(async (item: any) => {
       const code = PRODUCT_CODES[item.productId];
       if (!code) throw new Error(`Producto "${item.productName}" no tiene código Siigo configurado`);
       const taxRate = TAX_RATES[item.productId] ?? 19;
       const taxId = await getTaxId(taxRate);
       const taxInclusivePrice = item.price * discountFactor;
-      // Divide by (1 + rate) to get base; keep 2 decimals to avoid rounding drift
       const basePrice = Math.round(taxInclusivePrice / (1 + taxRate / 100) * 100) / 100;
-      return {
-        code,
-        description: item.productName,
-        quantity: item.quantity,
-        price: basePrice,
-        taxes: [{ id: taxId, percentage: taxRate }],
-      };
+      // Accumulate what Siigo will compute for this line
+      siigoTotal += Math.round(basePrice * item.quantity * (1 + taxRate / 100) * 100) / 100;
+      return { code, description: item.productName, quantity: item.quantity, price: basePrice, taxes: [{ id: taxId, percentage: taxRate }] };
     }));
+    // Round to nearest peso (Siigo works in whole pesos for Colombian invoices)
+    siigoTotal = Math.round(siigoTotal);
 
     const payments: Array<{ id: number; value: number; due_date: string }> = [];
     if (sale.secondPaymentMethod && sale.secondPaymentAmount > 0) {
       const [id1, id2] = await Promise.all([getPaymentTypeId(sale.paymentMethod), getPaymentTypeId(sale.secondPaymentMethod)]);
-      payments.push({ id: id1, value: sale.total - sale.secondPaymentAmount, due_date: sale.date });
-      payments.push({ id: id2, value: sale.secondPaymentAmount, due_date: sale.date });
+      const first = siigoTotal - sale.secondPaymentAmount;
+      payments.push({ id: id1, value: first, due_date: sale.date });
+      payments.push({ id: id2, value: siigoTotal - first, due_date: sale.date });
     } else {
       const id = await getPaymentTypeId(sale.paymentMethod);
-      payments.push({ id, value: sale.total, due_date: sale.date });
+      payments.push({ id, value: siigoTotal, due_date: sale.date });
     }
 
     let invoice: any;
