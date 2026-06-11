@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   X, Plus, Minus, Trash2, Check, ChevronRight,
   Banknote, Smartphone, CreditCard, AlertTriangle, RotateCcw,
-  User, ShoppingBag, Zap, ScanLine, Camera, Tag, Split, Download,
+  User, ShoppingBag, Zap, ScanLine, Camera, Tag, Split, Download, UserCheck,
 } from 'lucide-react'
 
 function downloadPdf(base64, invoiceName) {
@@ -385,10 +385,23 @@ export default function Sales({ onNav }) {
 
           {/* Customer form */}
           <div className="bg-white rounded-2xl shadow-card p-4">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <User size={14} className="text-brand-red flex-shrink-0" />
-              Datos del cliente
-            </h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <User size={14} className="text-brand-red flex-shrink-0" />
+                Datos del cliente
+              </h2>
+              <button
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => {
+                  setCustomer({ name: 'Consumidor Final', phone: '', email: '', document: '222222222' })
+                  if (scanMode) refocus()
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand-soft text-brand-red text-xs font-bold hover:bg-brand-red hover:text-white transition-all border border-brand-red/20"
+              >
+                <UserCheck size={13} />
+                Consumidor Final
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-3">
               {[
                 { key: 'name',     label: 'Nombre completo *', placeholder: 'María García',    type: 'text'  },
