@@ -175,7 +175,7 @@ async function getIdTypeCC(): Promise<string> {
       const name = (t.name || t.description || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
       return name.includes("ciudadan") || name.includes("cedula") || t.code === "CC" || t.id === 13;
     }) ?? types[0];
-    if (cc) { cachedIdTypeCC = String(cc.id); return cachedIdTypeCC!; }
+    if (cc) { cachedIdTypeCC = cc.code ?? String(cc.id); return cachedIdTypeCC!; }
   } catch { /* use default */ }
   cachedIdTypeCC = "13";
   return cachedIdTypeCC;
@@ -205,10 +205,9 @@ async function ensureCustomer(customer: { name: string; document: string; phone?
   const firstName = parts[0] || "Cliente";
   const lastName = parts.slice(1).join(" ") || "Final";
   const idTypeCC = await getIdTypeCC();
-  const idTypeNum = parseInt(idTypeCC, 10) || 13;
   try {
     await siigoRequest("POST", "/v1/customers", {
-      type: "Customer", person_type: "Person", id_type: { id: idTypeNum },
+      type: "Customer", person_type: "Person", id_type: idTypeCC,
       identification: docClean, name: [firstName, lastName],
       commercial_name: customer.name.trim(), active: true, vat_responsible: false,
       fiscal_responsibilities: [{ code: "R-99-PN" }],
@@ -225,6 +224,7 @@ async function ensureCustomer(customer: { name: string; document: string; phone?
       msg.includes("ya exist") || msg.includes("duplicad") || msg.includes("identificación") ||
       msg.includes("identificacion") || msg.includes("already exist") || msg.includes("conflict") ||
       msg.includes("409");
+    console.error("Customer creation failed, full error:", err.message);
     if (!isDuplicate) throw new Error(`Error al crear cliente en Siigo: ${err.message}`);
   }
   knownCustomers.add(customer.document);
