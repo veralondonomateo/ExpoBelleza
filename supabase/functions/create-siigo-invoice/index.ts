@@ -205,12 +205,14 @@ async function ensureCustomer(customer: { name: string; document: string; phone?
   const firstName = parts[0] || "Cliente";
   const lastName = parts.slice(1).join(" ") || "Final";
   const idTypeCC = await getIdTypeCC();
+  console.log("Creating customer, id_type:", idTypeCC, "doc:", docClean);
   try {
     await siigoRequest("POST", "/v1/customers", {
-      type: "Customer", person_type: "Person", id_type: idTypeCC,
-      identification: docClean, name: [firstName, lastName],
-      commercial_name: customer.name.trim(), active: true, vat_responsible: false,
-      fiscal_responsibilities: [{ code: "R-99-PN" }],
+      type: "Customer",
+      person_type: "Person",
+      id_type: idTypeCC,
+      identification: docClean,
+      name: [firstName, lastName],
       address: { address: "Sin direccion", city: { country_code: "Co", state_code: "11", city_code: "11001" } },
     });
   } catch (err: any) {
