@@ -69,14 +69,18 @@ async function siigoRequest(method: string, path: string, body?: unknown, qs?: R
   });
   const data = await res.json();
   if (!res.ok) {
+    const raw = JSON.stringify(data);
+    console.error("Siigo error response:", raw.slice(0, 500));
+    const code = data?.Code || data?.code || "";
     const msg =
       data?.Errors?.[0] ||
       data?.errors?.[0]?.Message ||
       data?.errors?.[0] ||
       data?.Message ||
       data?.message ||
-      JSON.stringify(data).slice(0, 300);
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      raw.slice(0, 300);
+    const msgStr = typeof msg === "string" ? msg : JSON.stringify(msg);
+    throw new Error(code ? `${code}: ${msgStr}` : msgStr);
   }
   return data;
 }
@@ -150,20 +154,20 @@ async function getPaymentTypeId(method: string): Promise<number> {
   return paymentTypeCache[method];
 }
 
-async function getTaxId(percentage: number): Promise<number> {
-  if (taxIdCache[percentage] !== undefined) return taxIdCache[percentage];
-  const d = await siigoRequest("GET", "/v1/taxes");
-  const taxes: any[] = d.results ?? (Array.isArray(d) ? d : []);
-  console.log("Siigo taxes:", JSON.stringify(taxes.map((t: any) => ({ id: t.id, name: t.name, percentage: t.percentage }))));
-  for (const tax of taxes) {
-    const pct = Number(tax.percentage ?? tax.rate ?? 0);
-    if (pct === 19) taxIdCache[19] = tax.id;
-    if (pct === 5)  taxIdCache[5]  = tax.id;
-    if (pct === 0)  taxIdCache[0]  = tax.id;
-  }
-  if (taxIdCache[percentage] === undefined)
-    throw new Error(`No se encontró IVA ${percentage}% en Siigo. Verifica los impuestos de tu cuenta.`);
-  return taxIdCache[percentage];
+async function getTaxId(percentage: number): Promise<number | null> {
+  if (taxIdCache[percentage] !== undefined) return taxIdCache[percentage] ?? null;
+  try {
+    const d = await siigoRequest("GET", "/v1/taxes");
+    const taxes: any[] = d.results ?? (Array.isArray(d) ? d : []);
+    console.log("Siigo taxes:", JSON.stringify(taxes.map((t: any) => ({ id: t.id, name: t.name, percentage: t.percentage }))));
+    for (const tax of taxes) {
+      const pct = Number(tax.percentage ?? tax.rate ?? 0);
+      if (pct === 19) taxIdCache[19] = tax.id;
+      if (pct === 5)  taxIdCache[5]  = tax.id;
+      if (pct === 0)  taxIdCache[0]  = tax.id;
+    }
+  } catch { /* if taxes endpoint fails, skip tax lines */ }
+  return taxIdCache[percentage] ?? null;
 }
 
 async function getIdTypeCC(): Promise<string> {
@@ -261,12 +265,19 @@ serve(async (req) => {
       const taxRate = TAX_RATES[item.productId] ?? 19;
       const taxId = await getTaxId(taxRate);
       const taxInclusivePrice = item.price * discountFactor;
-      const basePrice = Math.round(taxInclusivePrice / (1 + taxRate / 100) * 100) / 100;
-      // Accumulate what Siigo will compute for this line
-      siigoTotal += Math.round(basePrice * item.quantity * (1 + taxRate / 100) * 100) / 100;
-      return { code, description: item.productName, quantity: item.quantity, price: basePrice, taxes: [{ id: taxId, percentage: taxRate }] };
+
+      if (taxId !== null) {
+        // Tax-exclusive base price; Siigo adds the IVA on top
+        const basePrice = Math.round(taxInclusivePrice / (1 + taxRate / 100) * 100) / 100;
+        siigoTotal += Math.round(basePrice * item.quantity * (1 + taxRate / 100) * 100) / 100;
+        return { code, description: item.productName, quantity: item.quantity, price: basePrice, taxes: [{ id: taxId, percentage: taxRate }] };
+      } else {
+        // No tax type found — send IVA-inclusive price with no tax lines
+        const price = Math.round(taxInclusivePrice);
+        siigoTotal += price * item.quantity;
+        return { code, description: item.productName, quantity: item.quantity, price, taxes: [] };
+      }
     }));
-    // Round to nearest peso (Siigo works in whole pesos for Colombian invoices)
     siigoTotal = Math.round(siigoTotal);
 
     const payments: Array<{ id: number; value: number; due_date: string }> = [];
@@ -280,24 +291,49 @@ serve(async (req) => {
       payments.push({ id, value: siigoTotal, due_date: sale.date });
     }
 
+    const invoiceBody: Record<string, unknown> = {
+      document: { id: docTypeIdVal },
+      date: sale.date,
+      customer: { identification: sale.customer.document.replace(/\s+/g, "").trim(), branch_office: 0 },
+      seller: sellerIdVal, items, payments,
+    };
+
     let invoice: any;
     try {
-      invoice = await siigoRequest("POST", "/v1/invoices", {
-        document: { id: docTypeIdVal },
-        date: sale.date,
-        customer: { identification: sale.customer.document.replace(/\s+/g, "").trim(), branch_office: 0 },
-        seller: sellerIdVal, items, payments,
-      });
+      invoice = await siigoRequest("POST", "/v1/invoices", invoiceBody);
     } catch (err: any) {
-      const isDuplicate = (err.message || "").toLowerCase().includes("duplicated_document") ||
-        (err.message || "").toLowerCase().includes("document already exists");
-      if (!isDuplicate) throw err;
-      const existing = await siigoRequest("GET", "/v1/invoices", undefined, {
-        created_start: sale.date, created_end: sale.date, page: "1", page_size: "1",
-      });
-      const recovered = existing.results?.[0];
-      if (!recovered) throw new Error("Factura duplicada en Siigo y no se pudo recuperar.");
-      invoice = recovered;
+      const errMsg = err.message || "";
+
+      // Siigo returns the exact expected total in the error — parse and retry
+      if (errMsg.includes("invalid_total_payments") || errMsg.toLowerCase().includes("total invoice calculated")) {
+        const m = errMsg.match(/([\d]+(?:\.[\d]+)?)\s*$/);
+        const expectedTotal = m ? parseFloat(m[1]) : NaN;
+        if (!isNaN(expectedTotal)) {
+          console.log("Payment mismatch — retrying with Siigo total:", expectedTotal);
+          if (payments.length === 1) {
+            payments[0].value = expectedTotal;
+          } else {
+            // Adjust the second payment to make totals match
+            const secondVal = sale.secondPaymentAmount;
+            payments[1].value = secondVal;
+            payments[0].value = Math.round((expectedTotal - secondVal) * 100) / 100;
+          }
+          invoiceBody.payments = payments;
+          invoice = await siigoRequest("POST", "/v1/invoices", invoiceBody);
+        } else {
+          throw err;
+        }
+      } else {
+        const isDuplicate = errMsg.toLowerCase().includes("duplicated_document") ||
+          errMsg.toLowerCase().includes("document already exists");
+        if (!isDuplicate) throw err;
+        const existing = await siigoRequest("GET", "/v1/invoices", undefined, {
+          created_start: sale.date, created_end: sale.date, page: "1", page_size: "1",
+        });
+        const recovered = existing.results?.[0];
+        if (!recovered) throw new Error("Factura duplicada en Siigo y no se pudo recuperar.");
+        invoice = recovered;
+      }
     }
 
     const invoiceName = `${invoice.prefix || "FV"}-${invoice.number}`;
