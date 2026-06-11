@@ -393,7 +393,7 @@ export default function Sales({ onNav }) {
               <button
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => {
-                  setCustomer({ name: 'Consumidor Final', phone: '', email: '', document: '222222222' })
+                  setCustomer({ name: 'Consumidor Final', phone: '3000000000', email: 'consumidorfinal@cf.co', document: '222222222' })
                   if (scanMode) refocus()
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand-soft text-brand-red text-xs font-bold hover:bg-brand-red hover:text-white transition-all border border-brand-red/20"
