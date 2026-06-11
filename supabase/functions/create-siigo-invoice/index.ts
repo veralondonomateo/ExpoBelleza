@@ -181,12 +181,29 @@ async function getIdTypeCC(): Promise<string> {
   return cachedIdTypeCC;
 }
 
+async function customerExistsInSiigo(identification: string): Promise<boolean> {
+  try {
+    const d = await siigoRequest("GET", "/v1/customers", undefined, { identification });
+    const results: any[] = d.results ?? (Array.isArray(d) ? d : []);
+    return results.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureCustomer(customer: { name: string; document: string; phone?: string; email?: string }): Promise<void> {
   if (knownCustomers.has(customer.document)) return;
+  const docClean = customer.document.replace(/\s+/g, "").trim();
+
+  // Skip creation if customer already exists in Siigo
+  if (await customerExistsInSiigo(docClean)) {
+    knownCustomers.add(customer.document);
+    return;
+  }
+
   const parts = customer.name.trim().split(/\s+/);
   const firstName = parts[0] || "Cliente";
   const lastName = parts.slice(1).join(" ") || "Final";
-  const docClean = customer.document.replace(/\s+/g, "").trim();
   const idTypeCC = await getIdTypeCC();
   try {
     await siigoRequest("POST", "/v1/customers", {
@@ -199,11 +216,16 @@ async function ensureCustomer(customer: { name: string; document: string; phone?
       contacts: customer.email ? [{ first_name: firstName, last_name: lastName, email: customer.email }] : [],
     });
   } catch (err: any) {
+    // If creation failed, verify whether the customer actually exists (race condition or soft-duplicate)
+    if (await customerExistsInSiigo(docClean)) {
+      knownCustomers.add(customer.document);
+      return;
+    }
     const msg = (err.message || "").toLowerCase();
     const isDuplicate =
       msg.includes("ya exist") || msg.includes("duplicad") || msg.includes("identificación") ||
       msg.includes("identificacion") || msg.includes("already exist") || msg.includes("conflict") ||
-      msg.includes("409") || msg.includes("customers_service");
+      msg.includes("409");
     if (!isDuplicate) throw new Error(`Error al crear cliente en Siigo: ${err.message}`);
   }
   knownCustomers.add(customer.document);
