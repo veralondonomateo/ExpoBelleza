@@ -205,15 +205,14 @@ async function ensureCustomer(customer: { name: string; document: string; phone?
   const firstName = parts[0] || "Cliente";
   const lastName = parts.slice(1).join(" ") || "Final";
   const idTypeCC = await getIdTypeCC();
+  const idTypeNum = parseInt(idTypeCC, 10) || 13;
   try {
     await siigoRequest("POST", "/v1/customers", {
-      type: "Customer", person_type: "Person", id_type: idTypeCC,
+      type: "Customer", person_type: "Person", id_type: idTypeNum,
       identification: docClean, name: [firstName, lastName],
       commercial_name: customer.name.trim(), active: true, vat_responsible: false,
       fiscal_responsibilities: [{ code: "R-99-PN" }],
-      address: { address: "Sin dirección", city: { country_code: "Co", state_code: "11", city_code: "11001" } },
-      phones: [],
-      contacts: customer.email ? [{ first_name: firstName, last_name: lastName, email: customer.email }] : [],
+      address: { address: "Sin direccion", city: { country_code: "Co", state_code: "11", city_code: "11001" } },
     });
   } catch (err: any) {
     // If creation failed, verify whether the customer actually exists (race condition or soft-duplicate)
