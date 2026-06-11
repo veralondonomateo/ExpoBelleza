@@ -208,7 +208,7 @@ async function ensureCustomer(customer: { name: string; document: string; phone?
   const idTypeNum = parseInt(idTypeCC, 10) || 13;
   try {
     await siigoRequest("POST", "/v1/customers", {
-      type: "Customer", person_type: "Person", id_type: idTypeNum,
+      type: "Customer", person_type: "Person", id_type: { id: idTypeNum },
       identification: docClean, name: [firstName, lastName],
       commercial_name: customer.name.trim(), active: true, vat_responsible: false,
       fiscal_responsibilities: [{ code: "R-99-PN" }],
