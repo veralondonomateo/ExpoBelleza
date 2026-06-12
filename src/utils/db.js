@@ -26,6 +26,15 @@ export async function updateProduct(product) {
   if (error) throw error
 }
 
+// Components that make up each combo — used for stock decrement
+const COMBO_COMPONENTS = {
+  'combo-expobelleza': [
+    { productId: 'fem-probiotico', quantity: 1 },
+    { productId: 'jabon-intimo',   quantity: 1 },
+    { productId: 'gomas-pms',      quantity: 1 },
+  ],
+}
+
 // ── Sales ─────────────────────────────────────────────────────────────────────
 
 function rowToSale(row) {
@@ -119,18 +128,25 @@ export async function addSale(data) {
     if (itemsErr) throw itemsErr
   }
 
-  // Decrement stock for each product sold
+  // Decrement stock — combos decrement their component products
   for (const item of data.items ?? []) {
-    const { data: prod } = await supabase
-      .from('products')
-      .select('stock')
-      .eq('id', item.productId)
-      .single()
-    if (prod != null) {
-      await supabase
+    const components = COMBO_COMPONENTS[item.productId]
+    const toDecrement = components
+      ? components.map(c => ({ productId: c.productId, quantity: c.quantity * item.quantity }))
+      : [{ productId: item.productId, quantity: item.quantity }]
+
+    for (const { productId, quantity } of toDecrement) {
+      const { data: prod } = await supabase
         .from('products')
-        .update({ stock: Math.max(0, Number(prod.stock) - item.quantity), updated_at: now })
-        .eq('id', item.productId)
+        .select('stock')
+        .eq('id', productId)
+        .single()
+      if (prod != null) {
+        await supabase
+          .from('products')
+          .update({ stock: Math.max(0, Number(prod.stock) - quantity), updated_at: now })
+          .eq('id', productId)
+      }
     }
   }
 

@@ -279,7 +279,7 @@ export default function Sales({ onNav }) {
 
             {lastAdded && (
               <div className="flex items-center gap-2.5 px-3 py-2 bg-green-50 border border-green-100 rounded-xl mb-3">
-                <img src={`/${lastAdded.id}.webp`} alt="" className="w-6 h-6 rounded-lg object-cover flex-shrink-0" />
+                <img src={`/${lastAdded.id}.webp`} alt="" className="w-6 h-6 rounded-lg object-cover flex-shrink-0 bg-gray-100" onError={e => { e.target.onerror = null; e.target.style.visibility = 'hidden' }} />
                 <p className="text-xs text-green-700 font-semibold truncate">
                   {lastAdded.name} <span className="font-normal text-green-600">agregado ✓</span>
                 </p>
@@ -297,7 +297,7 @@ export default function Sales({ onNav }) {
                     onClick={() => { addToCart(p); if (scanMode) refocus() }}
                     className="flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-lg border border-gray-200 hover:border-brand-pink hover:bg-brand-soft transition text-xs font-medium text-gray-600"
                   >
-                    <img src={`/${p.id}.webp`} alt="" className="w-5 h-5 rounded object-cover" />
+                    <img src={`/${p.id}.webp`} alt="" className="w-5 h-5 rounded object-cover bg-gray-100" onError={e => { e.target.onerror = null; e.target.style.visibility = 'hidden' }} />
                     <span className="truncate max-w-[80px]">{p.name}</span>
                   </button>
                 ))}
@@ -339,7 +339,7 @@ export default function Sales({ onNav }) {
                   return (
                     <div key={item.productId} className="px-4 py-3 flex items-center gap-3">
                       <img src={`/${item.productId}.webp`} alt={item.productName}
-                        className="w-10 h-10 rounded-xl object-cover border border-gray-100 flex-shrink-0" />
+                        className="w-10 h-10 rounded-xl object-cover border border-gray-100 flex-shrink-0 bg-gray-100" onError={e => { e.target.onerror = null; e.target.style.visibility = 'hidden' }} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-800 truncate">{item.productName}</p>
                         <p className={`text-xs mt-0.5 ${item.price > 0 ? 'text-gray-400' : 'text-amber-500 font-medium'}`}>

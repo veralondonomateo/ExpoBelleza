@@ -7,20 +7,36 @@ const SIIGO_ACCESS_KEY = Deno.env.get("SIIGO_ACCESS_KEY") || "";
 const SIIGO_PARTNER_ID = Deno.env.get("SIIGO_PARTNER_ID") || "";
 
 const PRODUCT_CODES: Record<string, string> = {
-  "fem-probiotico": "01",
-  "jabon-intimo": "07",
-  "gomas-pms": "03",
-  "fem-mom": "18",
+  "fem-probiotico":  "01",
+  "jabon-intimo":    "07",
+  "gomas-pms":       "03",
+  "fem-mom":         "18",
   "soda-prebiotica": "25",
 };
 
-// IVA rate (%) per product — prices in the app are tax-inclusive
 const TAX_RATES: Record<string, number> = {
-  "fem-probiotico": 5,
-  "jabon-intimo": 19,
-  "gomas-pms": 5,
-  "fem-mom": 5,
+  "fem-probiotico":  5,
+  "jabon-intimo":    19,
+  "gomas-pms":       5,
+  "fem-mom":         5,
   "soda-prebiotica": 19,
+};
+
+const PRODUCT_NAMES: Record<string, string> = {
+  "fem-probiotico":  "Fem Probiótico",
+  "jabon-intimo":    "Jabón Íntimo",
+  "gomas-pms":       "Gomas PMS",
+  "fem-mom":         "Fem Mom",
+  "soda-prebiotica": "Soda Prebiótica",
+};
+
+// Combos: each key maps to the component products it contains
+const COMBO_COMPONENTS: Record<string, Array<{ productId: string; quantity: number; price: number }>> = {
+  "combo-expobelleza": [
+    { productId: "fem-probiotico", quantity: 1, price: 80000 },
+    { productId: "jabon-intimo",   quantity: 1, price: 22000 },
+    { productId: "gomas-pms",      quantity: 1, price: 73000 },
+  ],
 };
 
 // Module-level cache (persists within Deno isolate across warm requests)
@@ -253,14 +269,42 @@ serve(async (req) => {
     const [sellerIdVal, docTypeIdVal] = await Promise.all([getSellerId(), getDocumentTypeId()]);
     await ensureCustomer(sale.customer);
 
+    // discountFactor is computed from original cart (combos count as their full price)
     const subtotal: number = sale.items.reduce((s: number, i: any) => s + i.price * i.quantity, 0);
     const discountFactor = subtotal > 0 && sale.discount > 0 ? (subtotal - sale.discount) / subtotal : 1;
 
-    // Prices are IVA-inclusive. Back-calculate the base price so Siigo shows the
-    // tax breakdown correctly. Track what Siigo will actually sum to avoid
-    // invalid_total_payments due to floating-point rounding.
+    // Expand combos into component products and merge any duplicate product entries
+    type CartItem = { productId: string; productName: string; price: number; quantity: number };
+    const expandedItems: CartItem[] = [];
+    for (const item of sale.items as CartItem[]) {
+      const components = COMBO_COMPONENTS[item.productId];
+      if (components) {
+        for (const comp of components) {
+          const idx = expandedItems.findIndex(e => e.productId === comp.productId);
+          if (idx >= 0) {
+            expandedItems[idx].quantity += comp.quantity * item.quantity;
+          } else {
+            expandedItems.push({
+              productId:   comp.productId,
+              productName: PRODUCT_NAMES[comp.productId] ?? comp.productId,
+              price:       comp.price,
+              quantity:    comp.quantity * item.quantity,
+            });
+          }
+        }
+      } else {
+        const idx = expandedItems.findIndex(e => e.productId === item.productId);
+        if (idx >= 0) {
+          expandedItems[idx].quantity += item.quantity;
+        } else {
+          expandedItems.push({ ...item });
+        }
+      }
+    }
+
+    // Build Siigo line items — back-calculate IVA-exclusive base price per component
     let siigoTotal = 0;
-    const items = await Promise.all(sale.items.map(async (item: any) => {
+    const items = await Promise.all(expandedItems.map(async (item) => {
       const code = PRODUCT_CODES[item.productId];
       if (!code) throw new Error(`Producto "${item.productName}" no tiene código Siigo configurado`);
       const taxRate = TAX_RATES[item.productId] ?? 19;
@@ -268,12 +312,10 @@ serve(async (req) => {
       const taxInclusivePrice = item.price * discountFactor;
 
       if (taxId !== null) {
-        // Tax-exclusive base price; Siigo adds the IVA on top
         const basePrice = Math.round(taxInclusivePrice / (1 + taxRate / 100) * 100) / 100;
         siigoTotal += Math.round(basePrice * item.quantity * (1 + taxRate / 100) * 100) / 100;
         return { code, description: item.productName, quantity: item.quantity, price: basePrice, taxes: [{ id: taxId, percentage: taxRate }] };
       } else {
-        // No tax type found — send IVA-inclusive price with no tax lines
         const price = Math.round(taxInclusivePrice);
         siigoTotal += price * item.quantity;
         return { code, description: item.productName, quantity: item.quantity, price, taxes: [] };
