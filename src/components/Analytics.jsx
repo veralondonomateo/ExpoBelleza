@@ -6,6 +6,7 @@ import {
 import { TrendingUp, ShoppingCart, DollarSign, Users, Banknote, Smartphone, CreditCard, User } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { fmt$, fmtDate, isToday } from '../utils/formatters'
+import DailyStats from './DailyStats'
 
 const CHART_COLORS = ['#ED5340', '#FF9DA3', '#FBBF24', '#34D399', '#60A5FA']
 
@@ -61,7 +62,7 @@ function PayCard({ icon: Icon, label, amount, count, color }) {
 }
 
 export default function Analytics() {
-  const { sales, products, userRole } = useApp()
+  const { sales, wholesaleSales, products, userRole } = useApp()
   const isAdmin = userRole === 'admin'
 
   const stats = useMemo(() => {
@@ -282,6 +283,12 @@ export default function Analytics() {
           )}
         </div>
       )}
+
+      {/* Daily stats — retail & wholesale, with date filter */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <DailyStats sales={sales} title="Ventas — por día" />
+        <DailyStats sales={wholesaleSales} title="Ventas Mayoristas — por día" />
+      </div>
 
       {/* Recent sales */}
       <div className="bg-white rounded-xl shadow-card overflow-hidden">
