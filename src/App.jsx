@@ -5,6 +5,7 @@ import Sidebar    from './components/Sidebar'
 import Analytics  from './components/Analytics'
 import Products   from './components/Products'
 import Sales      from './components/Sales'
+import WholesaleSales from './components/WholesaleSales'
 import Orders     from './components/Orders'
 import Export     from './components/Export'
 import CierreCaja from './components/CierreCaja'
@@ -72,6 +73,7 @@ function AppContent() {
         {active === 'analytics' && <Analytics />}
         {active === 'products'  && <Products />}
         {active === 'sales'     && <Sales onNav={setActive} />}
+        {active === 'wholesale' && <WholesaleSales />}
         {active === 'orders'    && <Orders />}
         {active === 'export'    && <Export />}
         {active === 'caja'      && <CierreCaja />}

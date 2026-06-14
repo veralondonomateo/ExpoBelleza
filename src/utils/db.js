@@ -128,8 +128,15 @@ export async function addSale(data) {
     if (itemsErr) throw itemsErr
   }
 
-  // Decrement stock — combos decrement their component products
-  for (const item of data.items ?? []) {
+  await decrementStock(data.items)
+
+  return { id, date: now, ...data, invoice }
+}
+
+// Decrement stock — combos decrement their component products
+async function decrementStock(items) {
+  const now = new Date().toISOString()
+  for (const item of items ?? []) {
     const components = COMBO_COMPONENTS[item.productId]
     const toDecrement = components
       ? components.map(c => ({ productId: c.productId, quantity: c.quantity * item.quantity }))
@@ -149,8 +156,82 @@ export async function addSale(data) {
       }
     }
   }
+}
 
-  return { id, date: now, ...data, invoice }
+// ── Wholesale sales (mayoristas) ─────────────────────────────────────────────
+
+function rowToWholesaleSale(row) {
+  return {
+    id:                  row.id,
+    date:                row.created_at,
+    total:               Number(row.total),
+    paymentMethod:       row.payment_method,
+    discount:            Number(row.discount ?? 0),
+    secondPaymentMethod: row.second_payment_method ?? null,
+    secondPaymentAmount: Number(row.second_payment_amount ?? 0),
+    userId:              row.user_id   ?? null,
+    userName:            row.user_name ?? null,
+    customer: {
+      name:  row.customer_name  ?? '',
+      phone: row.customer_phone ?? '',
+    },
+    items: (row.items ?? []).map(i => ({
+      productId:   i.productId,
+      productName: i.productName,
+      price:       Number(i.price),
+      quantity:    Number(i.quantity),
+    })),
+  }
+}
+
+export async function getWholesaleSales() {
+  const { data, error } = await supabase
+    .from('wholesale_sales_full')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data.map(rowToWholesaleSale)
+}
+
+export async function addWholesaleSale(data) {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const now = new Date().toISOString()
+
+  const { error: saleErr } = await supabase
+    .from('wholesale_sales')
+    .insert({
+      id,
+      total:                 data.total,
+      payment_method:        data.paymentMethod,
+      discount:              data.discount            ?? 0,
+      second_payment_method: data.secondPaymentMethod ?? null,
+      second_payment_amount: data.secondPaymentAmount ?? 0,
+      user_id:               data.userId               ?? null,
+      user_name:             data.userName             ?? null,
+      customer_name:         data.customer?.name       || null,
+      customer_phone:        data.customer?.phone      || null,
+      created_at:            now,
+    })
+  if (saleErr) throw saleErr
+
+  if (data.items?.length) {
+    const { error: itemsErr } = await supabase
+      .from('wholesale_sale_items')
+      .insert(
+        data.items.map(i => ({
+          sale_id:      id,
+          product_id:   i.productId,
+          product_name: i.productName,
+          price:        i.price,
+          quantity:     i.quantity,
+        }))
+      )
+    if (itemsErr) throw itemsErr
+  }
+
+  await decrementStock(data.items)
+
+  return { id, date: now, ...data }
 }
 
 // ── Cierres de caja ───────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { BarChart2, Package, ShoppingBag, ClipboardList, Download, Wallet, ChevronLeft, ChevronRight, Users, LogOut } from 'lucide-react'
+import { BarChart2, Package, ShoppingBag, ClipboardList, Download, Wallet, ChevronLeft, ChevronRight, Users, LogOut, Store } from 'lucide-react'
 
 const NAV_GROUPS = [
   {
@@ -7,6 +7,7 @@ const NAV_GROUPS = [
       { id: 'analytics', icon: BarChart2,     label: 'Analíticas'     },
       { id: 'products',  icon: Package,       label: 'Productos'      },
       { id: 'sales',     icon: ShoppingBag,   label: 'Nueva Venta'    },
+      { id: 'wholesale', icon: Store,         label: 'Vtas. Mayoristas' },
     ],
   },
   {

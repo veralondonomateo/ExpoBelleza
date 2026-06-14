@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { getProducts, updateProduct as dbUpdateProduct, getSales, addSale as dbAddSale } from '../utils/db'
+import { getProducts, updateProduct as dbUpdateProduct, getSales, addSale as dbAddSale, getWholesaleSales, addWholesaleSale as dbAddWholesaleSale } from '../utils/db'
 import { INITIAL_PRODUCTS } from '../data/products'
 
 const Ctx = createContext()
@@ -9,20 +9,23 @@ export function AppProvider({ user, children }) {
   const [profile,  setProfile]  = useState(null)
   const [products, setProducts] = useState([])
   const [sales,    setSales]    = useState([])
+  const [wholesaleSales, setWholesaleSales] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [dbError,  setDbError]  = useState(null)
 
   useEffect(() => {
     async function init() {
       try {
-        const [{ data: prof }, prods, sls] = await Promise.all([
+        const [{ data: prof }, prods, sls, wsls] = await Promise.all([
           supabase.from('profiles').select('role, name').eq('id', user.id).single(),
           getProducts(),
           getSales(),
+          getWholesaleSales(),
         ])
         setProfile(prof)
         setProducts(prods.length ? prods : INITIAL_PRODUCTS.map(p => ({ ...p })))
         setSales(sls)
+        setWholesaleSales(wsls)
       } catch (err) {
         console.error('Error cargando datos:', err)
         setDbError(err.message)
@@ -65,10 +68,31 @@ export function AppProvider({ user, children }) {
     }
   }, [user, profile])
 
+  const addWholesaleSale = useCallback(async (data) => {
+    try {
+      const sale = await dbAddWholesaleSale({
+        ...data,
+        userId:   user.id,
+        userName: profile?.name || user.email?.split('@')[0] || null,
+      })
+      setProducts(prev =>
+        prev.map(p => {
+          const item = data.items.find(i => i.productId === p.id)
+          return item ? { ...p, stock: Math.max(0, p.stock - item.quantity) } : p
+        })
+      )
+      setWholesaleSales(prev => [sale, ...prev])
+      return sale
+    } catch (err) {
+      console.error('Error registrando venta mayorista:', err)
+      throw err
+    }
+  }, [user, profile])
+
   const userRole = profile?.role ?? 'vendedora'
 
   return (
-    <Ctx.Provider value={{ user, profile, userRole, products, sales, loading, dbError, updateProduct, addSale, logout }}>
+    <Ctx.Provider value={{ user, profile, userRole, products, sales, wholesaleSales, loading, dbError, updateProduct, addSale, addWholesaleSale, logout }}>
       {children}
     </Ctx.Provider>
   )
